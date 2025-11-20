@@ -1,0 +1,47 @@
+- id: hvac_priority
+  alias: HVAC Priority Room Selection
+  description: Determine which room becomes the active priority room based on deviation, direction, ranking, override, and recovery conditions.
+  mode: single
+
+  trigger:
+    - platform: time_pattern
+      minutes: "/1"
+
+    - platform: homeassistant
+      event: start
+
+    - platform: state
+      entity_id:
+        - climate.bedroom_air
+        - climate.office_air
+        - climate.shop_air
+        - climate.living_room_air
+      from: "unavailable"
+
+    - platform: state
+      entity_id: input_boolean.guest_override_active
+
+  variables:
+    bedroom_dev: "{{ states('sensor.bedroom_temperature_deviation') | float(0) }}"
+    office_dev: "{{ states('sensor.office_temperature_deviation') | float(0) }}"
+    shop_dev: "{{ states('sensor.shop_temperature_deviation') | float(0) }}"
+    living_dev: "{{ states('sensor.living_room_temperature_deviation') | float(0) }}"
+
+  action:
+    - choose:
+        - conditions:
+            - condition: state
+              entity_id: input_boolean.guest_override_active
+              state: "on"
+          sequence:
+            - service: input_text.set_value
+              target:
+                entity_id: input_text.priority_room
+              data:
+                value: "guest_override"
+      default:
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.priority_room
+          data:
+            value: "{{ 'bedroom' if bedroom_dev >= office_dev and bedroom_dev >= shop_dev and bedroom_dev >= living_dev else 'office' if office_dev >= shop_dev and office_dev >= living_dev else 'shop' if shop_dev >= living_dev else 'living' }}"

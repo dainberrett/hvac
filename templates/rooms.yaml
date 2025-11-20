@@ -1,0 +1,109 @@
+template:
+
+  # ==========================================================
+  # Bedroom
+  # ==========================================================
+
+  - sensor:
+      - name: bedroom_temperature_deviation
+        state: >
+          {{ states('sensor.temperature_sensor_bedroom_temperature') | float -
+             states('input_number.bedroom_setpoint') | float }}
+
+      - name: bedroom_out_of_setpoint
+        state: >
+          {% set temp = states('sensor.temperature_sensor_bedroom_temperature') | float %}
+          {% set setpoint = states('input_number.bedroom_setpoint') | float %}
+          {% set db = states('input_number.deadband') | float %}
+          {{ temp > setpoint + db or temp < setpoint - db }}
+
+      - name: bedroom_target_direction
+        state: >
+          {% set temp = states('sensor.temperature_sensor_bedroom_temperature') | float %}
+          {% set setpoint = states('input_number.bedroom_setpoint') | float %}
+          {% set db = states('input_number.deadband') | float %}
+          {% if temp > setpoint + db %}cool
+          {% elif temp < setpoint - db %}heat
+          {% else %}none
+          {% endif %}
+
+  # ==========================================================
+  # Office
+  # ==========================================================
+
+  - sensor:
+      - name: office_temperature_deviation
+        state: >
+          {{ states('sensor.temperature_sensor_office_temperature') | float -
+             states('input_number.office_setpoint') | float }}
+
+      - name: office_out_of_setpoint
+        state: >
+          {% set temp = states('sensor.temperature_sensor_office_temperature') | float %}
+          {% set setpoint = states('input_number.office_setpoint') | float %}
+          {% set db = states('input_number.deadband') | float %}
+          {{ temp > setpoint + db or temp < setpoint - db }}
+
+      - name: office_target_direction
+        state: >
+          {% set temp = states('sensor.temperature_sensor_office_temperature') | float %}
+          {% set setpoint = states('input_number.office_setpoint') | float %}
+          {% set db = states('input_number.deadband') | float %}
+          {% if temp > setpoint + db %}cool
+          {% elif temp < setpoint - db %}heat
+          {% else %}none
+          {% endif %}
+
+  # ==========================================================
+  # Living Room
+  # ==========================================================
+
+  - sensor:
+      - name: living_room_temperature_deviation
+        state: >
+          {{ states('sensor.temperature_sensor_living_room_temperature') | float -
+             states('input_number.living_room_setpoint') | float }}
+
+      - name: living_room_out_of_setpoint
+        state: >
+          {% set temp = states('sensor.temperature_sensor_living_room_temperature') | float %}
+          {% set setpoint = states('input_number.living_room_setpoint') | float %}
+          {% set db = states('input_number.deadband') | float %}
+          {{ temp > setpoint + db or temp < setpoint - db }}
+
+      - name: living_room_target_direction
+        state: >
+          {% set temp = states('sensor.temperature_sensor_living_room_temperature') | float %}
+          {% set setpoint = states('input_number.living_room_setpoint') | float %}
+          {% set db = states('input_number.deadband') | float %}
+          {% if temp > setpoint + db %}cool
+          {% elif temp < setpoint - db %}heat
+          {% else %}none
+          {% endif %}
+
+  # ==========================================================
+  # First Floor / Guest Area
+  # ==========================================================
+
+  - sensor:
+      - name: first_floor_temperature_deviation
+        state: >
+          {{ states('sensor.temperature_sensor_first_floor_temperature') | float -
+             states('input_number.first_floor_setpoint') | float }}
+
+      - name: first_floor_out_of_setpoint
+        state: >
+          {% set temp = states('sensor.temperature_sensor_first_floor_temperature') | float %}
+          {% set setpoint = states('input_number.first_floor_setpoint') | float %}
+          {% set db = states('input_number.deadband') | float %}
+          {{ temp > setpoint + db or temp < setpoint - db }}
+
+      - name: first_floor_target_direction
+        state: >
+          {% set temp = states('sensor.temperature_sensor_first_floor_temperature') | float %}
+          {% set setpoint = states('input_number.first_floor_setpoint') | float %}
+          {% set db = states('input_number.deadband') | float %}
+          {% if temp > setpoint + db %}cool
+          {% elif temp < setpoint - db %}heat
+          {% else %}none
+          {% endif %}
