@@ -1,47 +1,90 @@
 - id: hvac_priority
   alias: HVAC Priority Room Selection
-  description: Determine which room becomes the active priority room based on deviation, direction, ranking, override, and recovery conditions.
   mode: single
+  description: Determine the correct HVAC priority room based on deviation, delay, and ranking.
 
   trigger:
     - platform: time_pattern
       minutes: "/1"
 
-    - platform: homeassistant
-      event: start
-
-    - platform: state
-      entity_id:
-        - climate.bedroom_air
-        - climate.office_air
-        - climate.shop_air
-        - climate.living_room_air
-      from: "unavailable"
-
-    - platform: state
-      entity_id: input_boolean.guest_override_active
-
   variables:
-    bedroom_dev: "{{ states('sensor.bedroom_temperature_deviation') | float(0) }}"
-    office_dev: "{{ states('sensor.office_temperature_deviation') | float(0) }}"
-    shop_dev: "{{ states('sensor.shop_temperature_deviation') | float(0) }}"
-    living_dev: "{{ states('sensor.living_room_temperature_deviation') | float(0) }}"
+    # Current temps
+    bedroom_temp: "{{ states('sensor.temperature_sensor_bedroom_temperature') | float }}"
+    office_temp: "{{ states('sensor.temperature_sensor_office_temperature') | float }}"
+    living_temp: "{{ states('sensor.temperature_sensor_living_room_temperature') | float }}"
+    first_temp: "{{ states('sensor.temperature_sensor_first_floor_temperature') | float }}"
+
+    # Setpoints
+    bedroom_sp: "{{ states('input_number.bedroom_setpoint') | float }}"
+    office_sp: "{{ states('input_number.office_setpoint') | float }}"
+    living_sp: "{{ states('input_number.living_room_setpoint') | float }}"
+    first_sp: "{{ states('input_number.first_floor_setpoint') | float }}"
+
+    # Deviations (signed)
+    bedroom_dev: "{{ bedroom_temp - bedroom_sp }}"
+    office_dev: "{{ office_temp - office_sp }}"
+    living_dev: "{{ living_temp - living_sp }}"
+    first_dev: "{{ first_temp - first_sp }}"
+
+    # Absolute deviations
+    bedroom_abs: "{{ bedroom_dev | abs }}"
+    office_abs: "{{ office_dev | abs }}"
+    living_abs: "{{ living_dev | abs }}"
+    first_abs: "{{ first_dev | abs }}"
+
+    # Deviation threshold
+    threshold: 2
+
+    # Delay threshold (minutes)
+    delay_min: "{{ states('input_number.target_delay_minutes') | int }}"
+
+    # Booleans: room outside setpoint
+    bedroom_out: "{{ bedroom_abs >= threshold }}"
+    office_out: "{{ office_abs >= threshold }}"
+    living_out: "{{ living_abs >= threshold }}"
+    first_out: "{{ first_abs >= threshold }}"
+
+    # Time since last state change (in minutes)
+    bedroom_elapsed: "{{ (now() - states.sensor.temperature_sensor_bedroom_temperature.last_changed).seconds / 60 }}"
+    office_elapsed: "{{ (now() - states.sensor.temperature_sensor_office_temperature.last_changed).seconds / 60 }}"
+    living_elapsed: "{{ (now() - states.sensor.temperature_sensor_living_room_temperature.last_changed).seconds / 60 }}"
+    first_elapsed: "{{ (now() - states.sensor.temperature_sensor_first_floor_temperature.last_changed).seconds / 60 }}"
+
+    # Booleans: deviation persisted >= delay
+    bedroom_ready: "{{ bedroom_out and (bedroom_elapsed >= delay_min) }}"
+    office_ready: "{{ office_out and (office_elapsed >= delay_min) }}"
+    living_ready: "{{ living_out and (living_elapsed >= delay_min) }}"
+    first_ready: "{{ first_out and (first_elapsed >= delay_min) }}"
+
+    # Priority ranks
+    bedroom_rank: "{{ states('input_number.bedroom_priority') | int }}"
+    office_rank: "{{ states('input_number.office_priority') | int }}"
+    first_rank: "{{ states('input_number.first_floor_priority') | int }}"
+    living_rank: "{{ states('input_number.living_room_priority') | int }}"
+
+    # Room eligibility map: room_name → (is_ready, rank, deviation)
+    rooms: >
+      {{
+        {
+          'bedroom': (bedroom_ready, bedroom_rank, bedroom_abs),
+          'office':  (office_ready,  office_rank,  office_abs),
+          'first':   (first_ready,   first_rank,   first_abs),
+          'living':  (living_ready,  living_rank,  living_abs)
+        }
+      }}
+
+    # Final priority room selection
+    priority_room: >
+      {%- set eligible = rooms.items() | selectattr('1.0') | list -%}
+      {%- if eligible | length == 0 -%}
+        none
+      {%- else -%}
+        {{ (eligible | sort(attribute='1.1'))[0][0] }}
+      {%- endif -%}
 
   action:
-    - choose:
-        - conditions:
-            - condition: state
-              entity_id: input_boolean.guest_override_active
-              state: "on"
-          sequence:
-            - service: input_text.set_value
-              target:
-                entity_id: input_text.priority_room
-              data:
-                value: "guest_override"
-      default:
-        - service: input_text.set_value
-          target:
-            entity_id: input_text.priority_room
-          data:
-            value: "{{ 'bedroom' if bedroom_dev >= office_dev and bedroom_dev >= shop_dev and bedroom_dev >= living_dev else 'office' if office_dev >= shop_dev and office_dev >= living_dev else 'shop' if shop_dev >= living_dev else 'living' }}"
+    - service: input_text.set_value
+      target:
+        entity_id: input_text.priority_room
+      data:
+        value: "{{ priority_room }}"
