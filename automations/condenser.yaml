@@ -1,0 +1,106 @@
+- id: hvac_condenser_mode
+  alias: HVAC Condenser Mode Selection
+  mode: restart
+  description: Pick heat, cool, or fan_only based on all rooms and priority room.
+
+  trigger:
+    - platform: time_pattern
+      minutes: "/1"
+
+  variables:
+    # Current temps
+    test_marker: "running"
+    bedroom_temp: "{{ states('sensor.temperature_sensor_bedroom_temperature') | float }}"
+    office_temp: "{{ states('sensor.temperature_sensor_office_temperature') | float }}"
+    living_temp: "{{ states('sensor.temperature_sensor_living_room_temperature') | float }}"
+    first_temp: "{{ states('sensor.temperature_sensor_first_floor_temperature') | float }}"
+
+    # Setpoints
+    bedroom_sp: "{{ states('input_number.bedroom_setpoint') | float }}"
+    office_sp: "{{ states('input_number.office_setpoint') | float }}"
+    living_sp: "{{ states('input_number.living_room_setpoint') | float }}"
+    first_sp: "{{ states('input_number.first_floor_setpoint') | float }}"
+
+    # Signed deviations
+    bedroom_dev: "{{ bedroom_temp - bedroom_sp }}"
+    office_dev: "{{ office_temp - office_sp }}"
+    living_dev: "{{ living_temp - living_sp }}"
+    first_dev: "{{ first_temp - first_sp }}"
+
+    # Individual needs
+    # heat means temp below setpoint by more than 0.4
+    # cool means temp above setpoint by more than 0.4
+    # none otherwise
+    bedroom_need: >
+      {% if bedroom_dev < -0.4 %}heat
+      {% elif bedroom_dev > 0.4 %}cool
+      {% else %}none
+      {% endif %}
+    office_need: >
+      {% if office_dev < -0.4 %}heat
+      {% elif office_dev > 0.4 %}cool
+      {% else %}none
+      {% endif %}
+    living_need: >
+      {% if living_dev < -0.4 %}heat
+      {% elif living_dev > 0.4 %}cool
+      {% else %}none
+      {% endif %}
+    first_need: >
+      {% if first_dev < -0.4 %}heat
+      {% elif first_dev > 0.4 %}cool
+      {% else %}none
+      {% endif %}
+
+    # Mode needs summary
+    all_needs: "{{ [bedroom_need, office_need, living_need, first_need] }}"
+    has_heat: "{{ 'heat' in all_needs }}"
+    has_cool: "{{ 'cool' in all_needs }}"
+
+    # Priority
+    priority_room: "{{ states('input_text.priority_room') }}"
+    needs_map:
+      bedroom: "{{ bedroom_need }}"
+      office: "{{ office_need }}"
+      living: "{{ living_need }}"
+      first: "{{ first_need }}"
+    priority_need: "{{ needs_map[priority_room] if priority_room in needs_map else 'none' }}"
+
+  action:
+    - choose:
+        # If system has both heat and cool demands, follow priority room
+        - conditions:
+            - condition: template
+              value_template: "{{ has_heat and has_cool }}"
+          sequence:
+            - service: input_text.set_value
+              target:
+                entity_id: input_text.condenser_mode_request
+              data:
+                value: "{{ priority_need }}"
+        # If only heat needed
+        - conditions:
+            - condition: template
+              value_template: "{{ has_heat and not has_cool }}"
+          sequence:
+            - service: input_text.set_value
+              target:
+                entity_id: input_text.condenser_mode_request
+              data:
+                value: heat
+        # If only cool needed
+        - conditions:
+            - condition: template
+              value_template: "{{ has_cool and not has_heat }}"
+          sequence:
+            - service: input_text.set_value
+              target:
+                entity_id: input_text.condenser_mode_request
+              data:
+                value: cool
+      default:
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.condenser_mode_request
+          data:
+            value: fan_only
