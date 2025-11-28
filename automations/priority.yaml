@@ -1,90 +1,180 @@
 - id: hvac_priority
   alias: HVAC Priority Room Selection
-  mode: single
-  description: Determine the correct HVAC priority room based on deviation, delay, and ranking.
+  mode: restart
+  description: Determine priority room for HVAC based on deviation, delay, and night mode rules.
 
   trigger:
     - platform: time_pattern
       minutes: "/1"
 
   variables:
-    # Current temps
+
+    # --- Temps ---
     bedroom_temp: "{{ states('sensor.temperature_sensor_bedroom_temperature') | float }}"
     office_temp: "{{ states('sensor.temperature_sensor_office_temperature') | float }}"
     living_temp: "{{ states('sensor.temperature_sensor_living_room_temperature') | float }}"
     first_temp: "{{ states('sensor.temperature_sensor_first_floor_temperature') | float }}"
 
-    # Setpoints
+    # --- Setpoints ---
     bedroom_sp: "{{ states('input_number.bedroom_setpoint') | float }}"
     office_sp: "{{ states('input_number.office_setpoint') | float }}"
     living_sp: "{{ states('input_number.living_room_setpoint') | float }}"
     first_sp: "{{ states('input_number.first_floor_setpoint') | float }}"
 
-    # Deviations (signed)
+    # --- Deviations ---
     bedroom_dev: "{{ bedroom_temp - bedroom_sp }}"
     office_dev: "{{ office_temp - office_sp }}"
     living_dev: "{{ living_temp - living_sp }}"
     first_dev: "{{ first_temp - first_sp }}"
 
-    # Absolute deviations
-    bedroom_abs: "{{ bedroom_dev | abs }}"
-    office_abs: "{{ office_dev | abs }}"
-    living_abs: "{{ living_dev | abs }}"
-    first_abs: "{{ first_dev | abs }}"
+    # --- Room needs (±0.4°F) ---
+    bedroom_need: >
+      {% if bedroom_dev < -0.4 %}heat
+      {% elif bedroom_dev > 0.4 %}cool
+      {% else %}none
+      {% endif %}
+    office_need: >
+      {% if office_dev < -0.4 %}heat
+      {% elif office_dev > 0.4 %}cool
+      {% else %}none
+      {% endif %}
+    living_need: >
+      {% if living_dev < -0.4 %}heat
+      {% elif living_dev > 0.4 %}cool
+      {% else %}none
+      {% endif %}
+    first_need: >
+      {% if first_dev < -0.4 %}heat
+      {% elif first_dev > 0.4 %}cool
+      {% else %}none
+      {% endif %}
 
-    # Deviation threshold
-    threshold: 2
+    # --- Night Mode Settings ---
+    night_start: "{{ states('input_datetime.night_mode_start') }}"
+    night_end: "{{ states('input_datetime.night_mode_end') }}"
+    night_threshold: "{{ states('input_number.night_nonpriority_threshold') | float }}"
 
-    # Delay threshold (minutes)
-    delay_min: "{{ states('input_number.target_delay_minutes') | int }}"
+    # --- Local Time as HH:MM:SS ---
+    now_local: "{{ now().astimezone().strftime('%H:%M:%S') }}"
 
-    # Booleans: room outside setpoint
-    bedroom_out: "{{ bedroom_abs >= threshold }}"
-    office_out: "{{ office_abs >= threshold }}"
-    living_out: "{{ living_abs >= threshold }}"
-    first_out: "{{ first_abs >= threshold }}"
-
-    # Time since last state change (in minutes)
-    bedroom_elapsed: "{{ (now() - states.sensor.temperature_sensor_bedroom_temperature.last_changed).seconds / 60 }}"
-    office_elapsed: "{{ (now() - states.sensor.temperature_sensor_office_temperature.last_changed).seconds / 60 }}"
-    living_elapsed: "{{ (now() - states.sensor.temperature_sensor_living_room_temperature.last_changed).seconds / 60 }}"
-    first_elapsed: "{{ (now() - states.sensor.temperature_sensor_first_floor_temperature.last_changed).seconds / 60 }}"
-
-    # Booleans: deviation persisted >= delay
-    bedroom_ready: "{{ bedroom_out and (bedroom_elapsed >= delay_min) }}"
-    office_ready: "{{ office_out and (office_elapsed >= delay_min) }}"
-    living_ready: "{{ living_out and (living_elapsed >= delay_min) }}"
-    first_ready: "{{ first_out and (first_elapsed >= delay_min) }}"
-
-    # Priority ranks
-    bedroom_rank: "{{ states('input_number.bedroom_priority') | int }}"
-    office_rank: "{{ states('input_number.office_priority') | int }}"
-    first_rank: "{{ states('input_number.first_floor_priority') | int }}"
-    living_rank: "{{ states('input_number.living_room_priority') | int }}"
-
-    # Room eligibility map: room_name → (is_ready, rank, deviation)
-    rooms: >
-      {{
-        {
-          'bedroom': (bedroom_ready, bedroom_rank, bedroom_abs),
-          'office':  (office_ready,  office_rank,  office_abs),
-          'first':   (first_ready,   first_rank,   first_abs),
-          'living':  (living_ready,  living_rank,  living_abs)
-        }
-      }}
-
-    # Final priority room selection
-    priority_room: >
-      {%- set eligible = rooms.items() | selectattr('1.0') | list -%}
-      {%- if eligible | length == 0 -%}
-        none
-      {%- else -%}
-        {{ (eligible | sort(attribute='1.1'))[0][0] }}
-      {%- endif -%}
+    # --- Safe night-mode check (string 24-hour compare) ---
+    is_night: >
+      {% set start = night_start %}
+      {% set end = night_end %}
+      {% set now = now_local %}
+      {% if start < end %}
+        {{ start <= now <= end }}
+      {% else %}
+        {{ now >= start or now <= end }}
+      {% endif %}
 
   action:
-    - service: input_text.set_value
-      target:
-        entity_id: input_text.priority_room
-      data:
-        value: "{{ priority_room }}"
+    - choose:
+
+        ##################################################################
+        # NIGHT MODE LOGIC
+        ##################################################################
+        - conditions:
+            - condition: template
+              value_template: "{{ is_night }}"
+          sequence:
+
+            - variables:
+                night_devs:
+                  bedroom: "{{ bedroom_dev }}"
+                  office: "{{ office_dev }}"
+                  living: "{{ living_dev }}"
+                  first: "{{ first_dev }}"
+
+                night_qualifies:
+                  bedroom: true
+                  office: "{{ office_dev | abs >= night_threshold }}"
+                  living: "{{ living_dev | abs >= night_threshold }}"
+                  first: "{{ first_dev | abs >= night_threshold }}"
+
+            # Bedroom auto-dominance rule (comfort protector)
+            - choose:
+                - conditions:
+                    - condition: template
+                      value_template: "{{ bedroom_dev | abs >= 2 }}"
+                  sequence:
+                    - service: input_text.set_value
+                      target:
+                        entity_id: input_text.priority_room
+                      data:
+                        value: "bedroom"
+              default:
+                - variables:
+                    night_candidates: >
+                      {% set items = [] %}
+                      {% for r,dev in night_devs.items() %}
+                        {% if night_qualifies[r] and (dev | abs >= night_threshold) %}
+                          {% set _ = items.append((r, dev | abs)) %}
+                        {% endif %}
+                      {% endfor %}
+                      {{ items }}
+
+                - choose:
+                    - conditions:
+                        - condition: template
+                          value_template: "{{ night_candidates | length > 0 }}"
+                      sequence:
+                        - variables:
+                            sorted_night: "{{ night_candidates | sort(attribute=1, reverse=True) }}"
+                            night_winner: "{{ sorted_night[0][0] }}"
+                        - service: input_text.set_value
+                          target:
+                            entity_id: input_text.priority_room
+                          data:
+                            value: "{{ night_winner }}"
+                  default:
+                    - service: input_text.set_value
+                      target:
+                        entity_id: input_text.priority_room
+                      data:
+                        value: "none"
+
+        ##################################################################
+        # DAY MODE LOGIC (unchanged)
+        ##################################################################
+        - conditions:
+            - condition: template
+              value_template: "{{ not is_night }}"
+          sequence:
+
+            - variables:
+                day_devs:
+                  bedroom: "{{ bedroom_dev }}"
+                  office: "{{ office_dev }}"
+                  living: "{{ living_dev }}"
+                  first: "{{ first_dev }}"
+
+            - variables:
+                day_candidates: >
+                  {% set items = [] %}
+                  {% for r,dev in day_devs.items() %}
+                    {% if dev | abs >= 2 %}
+                      {% set _ = items.append((r, dev | abs)) %}
+                    {% endif %}
+                  {% endfor %}
+                  {{ items }}
+
+            - choose:
+                - conditions:
+                    - condition: template
+                      value_template: "{{ day_candidates | length > 0 }}"
+                  sequence:
+                    - variables:
+                        sorted_day: "{{ day_candidates | sort(attribute=1, reverse=True) }}"
+                        day_winner: "{{ sorted_day[0][0] }}"
+                    - service: input_text.set_value
+                      target:
+                        entity_id: input_text.priority_room
+                      data:
+                        value: "{{ day_winner }}"
+              default:
+                - service: input_text.set_value
+                  target:
+                    entity_id: input_text.priority_room
+                  data:
+                    value: "none"
