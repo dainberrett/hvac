@@ -24,6 +24,7 @@ tests/
 ## Philosophy
 
 - Use dedicated Zigbee temperature sensors (Sonoff) as authoritative readings.
+- Dynamic sensor offset calibration: compensates for inaccurate Mitsubishi head unit sensors by comparing them to Sonoff readings and adjusting setpoint commands accordingly.
 - Minimize condenser mode switching (45-minute minimum runtime before mode switch).
 - Only the priority room is allowed to change condenser mode.
 - All non-targeted rooms use neutral temperature targets (60°F for heat, 80°F for cool).
