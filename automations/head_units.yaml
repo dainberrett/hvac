@@ -48,10 +48,25 @@
     first_dev: "{{ states('sensor.first_floor_temperature_deviation') | float }}"
 
     # Room needs conditioning? (matches condenser mode direction)
-    bedroom_needs: "{{ (mode == 'heat' and bedroom_dev <= -threshold) or (mode == 'cool' and bedroom_dev >= threshold) }}"
-    office_needs: "{{ (mode == 'heat' and office_dev <= -threshold) or (mode == 'cool' and office_dev >= threshold) }}"
-    living_needs: "{{ (mode == 'heat' and living_dev <= -threshold) or (mode == 'cool' and living_dev >= threshold) }}"
-    first_needs: "{{ (mode == 'heat' and first_dev <= -threshold) or (mode == 'cool' and first_dev >= threshold) }}"
+    # Logic: Trigger at threshold, but continue until setpoint is reached.
+    # This prevents oscillation where cooling stops at 1.6°F deviation, room drifts
+    # back to 2.0°F, cooling restarts, etc.
+    bedroom_needs: >
+      {% set currently_out = states('sensor.bedroom_out_of_setpoint') == 'True' %}
+      {{ (mode == 'heat' and (bedroom_dev <= -threshold or (currently_out and bedroom_dev < 0))) or
+         (mode == 'cool' and (bedroom_dev >= threshold or (currently_out and bedroom_dev > 0))) }}
+    office_needs: >
+      {% set currently_out = states('sensor.office_out_of_setpoint') == 'True' %}
+      {{ (mode == 'heat' and (office_dev <= -threshold or (currently_out and office_dev < 0))) or
+         (mode == 'cool' and (office_dev >= threshold or (currently_out and office_dev > 0))) }}
+    living_needs: >
+      {% set currently_out = states('sensor.living_room_out_of_setpoint') == 'True' %}
+      {{ (mode == 'heat' and (living_dev <= -threshold or (currently_out and living_dev < 0))) or
+         (mode == 'cool' and (living_dev >= threshold or (currently_out and living_dev > 0))) }}
+    first_needs: >
+      {% set currently_out = states('sensor.first_floor_out_of_setpoint') == 'True' %}
+      {{ (mode == 'heat' and (first_dev <= -threshold or (currently_out and first_dev < 0))) or
+         (mode == 'cool' and (first_dev >= threshold or (currently_out and first_dev > 0))) }}
 
     # Target temperatures with dynamic offset compensation
     # Heat mode: tell unit to heat higher (sp + offset) so it runs longer
