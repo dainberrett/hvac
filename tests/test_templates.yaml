@@ -1,0 +1,269 @@
+# =============================================================================
+# HVAC Test Template Sensors
+# =============================================================================
+# These templates provide test-mode-aware sensors that read from simulated
+# inputs when test mode is active, and real sensors when in normal operation.
+#
+# Included via configuration.yaml:
+#   template:
+#     - !include templates/hvac/test_templates.yaml
+# =============================================================================
+
+binary_sensor:
+  # ===========================================================================
+  # Test-Mode-Aware Night Mode
+  # ===========================================================================
+  - name: hvac_night_mode_testable
+    state: >
+      {% if is_state('input_boolean.hvac_test_mode', 'on') %}
+        {% set start = states('input_datetime.night_mode_start') %}
+        {% set end = states('input_datetime.night_mode_end') %}
+        {% set test_time = states('input_datetime.test_simulated_time') %}
+        {% if start > end %}
+          {{ test_time >= start or test_time < end }}
+        {% else %}
+          {{ test_time >= start and test_time < end }}
+        {% endif %}
+      {% else %}
+        {{ is_state('binary_sensor.hvac_night_mode', 'on') }}
+      {% endif %}
+
+sensor:
+  # ===========================================================================
+  # Test-Mode-Aware Temperature Sensors
+  # ===========================================================================
+  # These sensors switch between real and simulated values based on test mode.
+  # Your automations should reference these instead of raw sensor values.
+  # ===========================================================================
+  - name: hvac_bedroom_temperature
+    unit_of_measurement: "°F"
+    state: >
+      {% if is_state('input_boolean.hvac_test_mode', 'on') %}
+        {{ states('input_number.test_bedroom_temperature') | float }}
+      {% else %}
+        {{ states('sensor.temperature_sensor_bedroom_temperature') | float }}
+      {% endif %}
+
+  - name: hvac_office_temperature
+    unit_of_measurement: "°F"
+    state: >
+      {% if is_state('input_boolean.hvac_test_mode', 'on') %}
+        {{ states('input_number.test_office_temperature') | float }}
+      {% else %}
+        {{ states('sensor.temperature_sensor_office_temperature') | float }}
+      {% endif %}
+
+  - name: hvac_living_room_temperature
+    unit_of_measurement: "°F"
+    state: >
+      {% if is_state('input_boolean.hvac_test_mode', 'on') %}
+        {{ states('input_number.test_living_room_temperature') | float }}
+      {% else %}
+        {{ states('sensor.temperature_sensor_living_room_temperature') | float }}
+      {% endif %}
+
+  - name: hvac_first_floor_temperature
+    unit_of_measurement: "°F"
+    state: >
+      {% if is_state('input_boolean.hvac_test_mode', 'on') %}
+        {{ states('input_number.test_first_floor_temperature') | float }}
+      {% else %}
+        {{ states('sensor.temperature_sensor_first_floor_temperature') | float }}
+      {% endif %}
+
+  # ===========================================================================
+  # Test Logic Evaluation Sensors
+  # ===========================================================================
+  # These sensors evaluate the core HVAC logic using the testable inputs.
+  # They mirror the production logic but use the test-aware sensors above.
+  # ===========================================================================
+
+  # ---------------------------------------------------------------------------
+  # Deviation Calculations
+  # ---------------------------------------------------------------------------
+  - name: test_bedroom_deviation
+    unit_of_measurement: "°F"
+    state: >
+      {{ (states('sensor.hvac_bedroom_temperature') | float -
+         states('input_number.bedroom_setpoint') | float) | round(1) }}
+
+  - name: test_office_deviation
+    unit_of_measurement: "°F"
+    state: >
+      {{ (states('sensor.hvac_office_temperature') | float -
+         states('input_number.office_setpoint') | float) | round(1) }}
+
+  - name: test_living_room_deviation
+    unit_of_measurement: "°F"
+    state: >
+      {{ (states('sensor.hvac_living_room_temperature') | float -
+         states('input_number.living_room_setpoint') | float) | round(1) }}
+
+  - name: test_first_floor_deviation
+    unit_of_measurement: "°F"
+    state: >
+      {{ (states('sensor.hvac_first_floor_temperature') | float -
+         states('input_number.first_floor_setpoint') | float) | round(1) }}
+
+  # ---------------------------------------------------------------------------
+  # Out of Setpoint Status (respects night mode thresholds)
+  # ---------------------------------------------------------------------------
+  - name: test_bedroom_out_of_setpoint
+    state: >
+      {% set dev = states('sensor.test_bedroom_deviation') | float %}
+      {% set threshold = states('input_number.deviation_threshold') | float(2) %}
+      {{ dev | abs >= threshold }}
+
+  - name: test_office_out_of_setpoint
+    state: >
+      {% set dev = states('sensor.test_office_deviation') | float %}
+      {% set is_night = is_state('binary_sensor.hvac_night_mode_testable', 'on') %}
+      {% set threshold = states('input_number.night_non_priority_threshold') | float(6) if is_night else states('input_number.deviation_threshold') | float(2) %}
+      {{ dev | abs >= threshold }}
+
+  - name: test_living_room_out_of_setpoint
+    state: >
+      {% set dev = states('sensor.test_living_room_deviation') | float %}
+      {% set is_night = is_state('binary_sensor.hvac_night_mode_testable', 'on') %}
+      {% set threshold = states('input_number.night_non_priority_threshold') | float(6) if is_night else states('input_number.deviation_threshold') | float(2) %}
+      {{ dev | abs >= threshold }}
+
+  - name: test_first_floor_out_of_setpoint
+    state: >
+      {% set dev = states('sensor.test_first_floor_deviation') | float %}
+      {% set is_night = is_state('binary_sensor.hvac_night_mode_testable', 'on') %}
+      {% set threshold = states('input_number.night_non_priority_threshold') | float(6) if is_night else states('input_number.deviation_threshold') | float(2) %}
+      {{ dev | abs >= threshold }}
+
+  # ---------------------------------------------------------------------------
+  # Target Direction (heat/cool/none)
+  # ---------------------------------------------------------------------------
+  - name: test_bedroom_target_direction
+    state: >
+      {% set dev = states('sensor.test_bedroom_deviation') | float %}
+      {% set threshold = states('input_number.deviation_threshold') | float(2) %}
+      {# Trigger at threshold, but continue until setpoint reached #}
+      {% set currently_out = states('sensor.test_bedroom_out_of_setpoint') == 'True' %}
+      {% if dev >= threshold %}cool
+      {% elif dev <= -threshold %}heat
+      {% elif currently_out and dev > 0 %}cool
+      {% elif currently_out and dev < 0 %}heat
+      {% else %}none
+      {% endif %}
+
+  - name: test_office_target_direction
+    state: >
+      {% set dev = states('sensor.test_office_deviation') | float %}
+      {% set is_night = is_state('binary_sensor.hvac_night_mode_testable', 'on') %}
+      {% set threshold = states('input_number.night_non_priority_threshold') | float(6) if is_night else states('input_number.deviation_threshold') | float(2) %}
+      {# Trigger at threshold, but continue until setpoint reached #}
+      {% set currently_out = states('sensor.test_office_out_of_setpoint') == 'True' %}
+      {% if dev >= threshold %}cool
+      {% elif dev <= -threshold %}heat
+      {% elif currently_out and dev > 0 %}cool
+      {% elif currently_out and dev < 0 %}heat
+      {% else %}none
+      {% endif %}
+
+  - name: test_living_room_target_direction
+    state: >
+      {% set dev = states('sensor.test_living_room_deviation') | float %}
+      {% set is_night = is_state('binary_sensor.hvac_night_mode_testable', 'on') %}
+      {% set threshold = states('input_number.night_non_priority_threshold') | float(6) if is_night else states('input_number.deviation_threshold') | float(2) %}
+      {# Trigger at threshold, but continue until setpoint reached #}
+      {% set currently_out = states('sensor.test_living_room_out_of_setpoint') == 'True' %}
+      {% if dev >= threshold %}cool
+      {% elif dev <= -threshold %}heat
+      {% elif currently_out and dev > 0 %}cool
+      {% elif currently_out and dev < 0 %}heat
+      {% else %}none
+      {% endif %}
+
+  - name: test_first_floor_target_direction
+    state: >
+      {% set dev = states('sensor.test_first_floor_deviation') | float %}
+      {% set is_night = is_state('binary_sensor.hvac_night_mode_testable', 'on') %}
+      {% set threshold = states('input_number.night_non_priority_threshold') | float(6) if is_night else states('input_number.deviation_threshold') | float(2) %}
+      {# Trigger at threshold, but continue until setpoint reached #}
+      {% set currently_out = states('sensor.test_first_floor_out_of_setpoint') == 'True' %}
+      {% if dev >= threshold %}cool
+      {% elif dev <= -threshold %}heat
+      {% elif currently_out and dev > 0 %}cool
+      {% elif currently_out and dev < 0 %}heat
+      {% else %}none
+      {% endif %}
+
+  # ---------------------------------------------------------------------------
+  # Fan Speed Calculations (mirrors head_units.yaml logic)
+  # ---------------------------------------------------------------------------
+  # Fan speed is based on deviation magnitude:
+  # > 3°F = high, 1.5-3°F = medium, ≤ 1.5°F = low
+  # Rooms not needing conditioning run on "low" for circulation
+  # ---------------------------------------------------------------------------
+  - name: test_bedroom_fan_speed
+    state: >
+      {% set dev = states('sensor.test_bedroom_deviation') | float %}
+      {% set mode = states('input_text.condenser_mode_request') %}
+      {% set threshold = states('input_number.deviation_threshold') | float(2) %}
+      {% set needs = (mode == 'heat' and dev <= -threshold) or (mode == 'cool' and dev >= threshold) %}
+      {% if not needs %}low
+      {% elif dev | abs > 3 %}high
+      {% elif dev | abs > 1.5 %}medium
+      {% else %}low
+      {% endif %}
+
+  - name: test_office_fan_speed
+    state: >
+      {% set dev = states('sensor.test_office_deviation') | float %}
+      {% set mode = states('input_text.condenser_mode_request') %}
+      {% set threshold = states('input_number.deviation_threshold') | float(2) %}
+      {% set needs = (mode == 'heat' and dev <= -threshold) or (mode == 'cool' and dev >= threshold) %}
+      {% if not needs %}low
+      {% elif dev | abs > 3 %}high
+      {% elif dev | abs > 1.5 %}medium
+      {% else %}low
+      {% endif %}
+
+  - name: test_living_room_fan_speed
+    state: >
+      {% set dev = states('sensor.test_living_room_deviation') | float %}
+      {% set mode = states('input_text.condenser_mode_request') %}
+      {% set threshold = states('input_number.deviation_threshold') | float(2) %}
+      {% set needs = (mode == 'heat' and dev <= -threshold) or (mode == 'cool' and dev >= threshold) %}
+      {% if not needs %}low
+      {% elif dev | abs > 3 %}high
+      {% elif dev | abs > 1.5 %}medium
+      {% else %}low
+      {% endif %}
+
+  # First floor is 600 sq ft - always run high when being conditioned
+  - name: test_first_floor_fan_speed
+    state: >
+      {% set dev = states('sensor.test_first_floor_deviation') | float %}
+      {% set mode = states('input_text.condenser_mode_request') %}
+      {% set threshold = states('input_number.deviation_threshold') | float(2) %}
+      {% set needs = (mode == 'heat' and dev <= -threshold) or (mode == 'cool' and dev >= threshold) %}
+      {{ 'high' if needs else 'low' }}
+
+  # ---------------------------------------------------------------------------
+  # Test Results Display
+  # ---------------------------------------------------------------------------
+  - name: hvac_test_summary
+    state: >
+      {% set passed = states('input_number.test_passed_count') | int %}
+      {% set failed = states('input_number.test_failed_count') | int %}
+      {% set total = states('input_number.test_total_count') | int %}
+      {% if is_state('input_boolean.hvac_test_running', 'on') %}
+        Running: {{ states('input_text.test_current_name') }}
+      {% elif total > 0 %}
+        {{ passed }}/{{ total }} passed{% if failed > 0 %} ({{ failed }} failed){% endif %}
+      {% else %}
+        No tests run
+      {% endif %}
+    attributes:
+      passed: "{{ states('input_number.test_passed_count') | int }}"
+      failed: "{{ states('input_number.test_failed_count') | int }}"
+      total: "{{ states('input_number.test_total_count') | int }}"
+      failed_tests: "{{ states('input_text.test_failed_list') }}"
+      current_test: "{{ states('input_text.test_current_name') }}"
+      status: "{{ states('input_text.test_current_status') }}"

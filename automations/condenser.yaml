@@ -1,159 +1,64 @@
 - id: hvac_condenser_mode
   alias: HVAC Condenser Mode Selection
   mode: restart
-  description: Pick heat or cool based on all rooms and priority room with deviation delay and reverse hysteresis.
+  description: Set condenser mode based on priority room's need, with minimum runtime protection.
 
   trigger:
     - platform: time_pattern
       minutes: "/1"
 
   variables:
-    bedroom_temp: "{{ states('sensor.temperature_sensor_bedroom_temperature') | float }}"
-    office_temp: "{{ states('sensor.temperature_sensor_office_temperature') | float }}"
-    living_temp: "{{ states('sensor.temperature_sensor_living_room_temperature') | float }}"
-    first_temp: "{{ states('sensor.temperature_sensor_first_floor_temperature') | float }}"
-
-    bedroom_sp: "{{ states('input_number.bedroom_setpoint') | float }}"
-    office_sp: "{{ states('input_number.office_setpoint') | float }}"
-    living_sp: "{{ states('input_number.living_room_setpoint') | float }}"
-    first_sp: "{{ states('input_number.first_floor_setpoint') | float }}"
-
-    bedroom_dev: "{{ bedroom_temp - bedroom_sp }}"
-    office_dev: "{{ office_temp - office_sp }}"
-    living_dev: "{{ living_temp - living_sp }}"
-    first_dev: "{{ first_temp - first_sp }}"
-
-    bedroom_need: >
-      {% if bedroom_dev < -0.4 %}heat
-      {% elif bedroom_dev > 0.4 %}cool
-      {% else %}none
-      {% endif %}
-    office_need: >
-      {% if office_dev < -0.4 %}heat
-      {% elif office_dev > 0.4 %}cool
-      {% else %}none
-      {% endif %}
-    living_need: >
-      {% if living_dev < -0.4 %}heat
-      {% elif living_dev > 0.4 %}cool
-      {% else %}none
-      {% endif %}
-    first_need: >
-      {% if first_dev < -0.4 %}heat
-      {% elif first_dev > 0.4 %}cool
-      {% else %}none
-      {% endif %}
-
-    all_needs: "{{ [bedroom_need, office_need, living_need, first_need] }}"
-    has_heat: "{{ 'heat' in all_needs }}"
-    has_cool: "{{ 'cool' in all_needs }}"
-
+    # Get priority room
     priority_room: "{{ states('input_text.priority_room') }}"
-    needs_map:
-      bedroom: "{{ bedroom_need }}"
-      office: "{{ office_need }}"
-      living: "{{ living_need }}"
-      first: "{{ first_need }}"
-    priority_need: "{{ needs_map[priority_room] if priority_room in needs_map else 'none' }}"
 
-    priority_dev: >
-      {% if priority_room == 'bedroom' %}{{ bedroom_dev }}
-      {% elif priority_room == 'office' %}{{ office_dev }}
-      {% elif priority_room == 'living' %}{{ living_dev }}
-      {% elif priority_room == 'first' %}{{ first_dev }}
-      {% else %}0{% endif %}
+    # Get priority room's target direction (heat, cool, or none)
+    priority_direction: >
+      {% if priority_room == 'bedroom' %}
+        {{ states('sensor.bedroom_target_direction') }}
+      {% elif priority_room == 'office' %}
+        {{ states('sensor.office_target_direction') }}
+      {% elif priority_room == 'living' %}
+        {{ states('sensor.living_room_target_direction') }}
+      {% elif priority_room == 'first' %}
+        {{ states('sensor.first_floor_target_direction') }}
+      {% else %}
+        none
+      {% endif %}
 
-    priority_sp: >
-      {% if priority_room == 'bedroom' %}{{ bedroom_sp }}
-      {% elif priority_room == 'office' %}{{ office_sp }}
-      {% elif priority_room == 'living' %}{{ living_sp }}
-      {% elif priority_room == 'first' %}{{ first_sp }}
-      {% else %}0{% endif %}
-
-    delay_min: "{{ states('input_number.target_delay_minutes') | int }}"
-
-    seconds_since_change: >
-      {{ (as_timestamp(now()) - as_timestamp(states.input_text.condenser_mode_request.last_changed)) | int }}
-
-    heat_reverse_offset: "{{ states('input_number.heat_reverse_offset') | float }}"
-    cool_reverse_offset: "{{ states('input_number.cool_reverse_offset') | float }}"
-
-    heat_reverse: "{{ priority_sp - heat_reverse_offset }}"
-    cool_reverse: "{{ priority_sp + cool_reverse_offset }}"
-
+    # Current condenser mode
     current_mode: >
       {% set cm = states('input_text.condenser_mode_request') %}
-      {% if cm in ['heat','cool'] %}
+      {% if cm in ['heat', 'cool'] %}
         {{ cm }}
       {% else %}
         heat
       {% endif %}
 
+    # Minutes since last mode change
+    minutes_since_change: >
+      {{ ((as_timestamp(now()) - as_timestamp(states.input_text.condenser_mode_request.last_changed)) / 60) | round(1) }}
+
+    # Minimum runtime before mode switch allowed (default 45 minutes)
+    minimum_runtime: "{{ states('input_number.minimum_runtime_minutes') | float(45) }}"
+
+    # Can we switch modes?
+    runtime_elapsed: "{{ minutes_since_change >= minimum_runtime }}"
+
+    # Determine new mode
+    new_mode: >
+      {% if priority_room == 'none' or priority_direction == 'none' %}
+        {{ current_mode }}
+      {% elif priority_direction == current_mode %}
+        {{ current_mode }}
+      {% elif runtime_elapsed %}
+        {{ priority_direction }}
+      {% else %}
+        {{ current_mode }}
+      {% endif %}
+
   action:
-    - choose:
-
-        - conditions:
-            - condition: template
-              value_template: "{{ has_heat and has_cool }}"
-          sequence:
-            - service: input_text.set_value
-              data:
-                value: >
-                  {% set temp = priority_sp + priority_dev %}
-                  {% if current_mode == 'heat' %}
-                    {% if temp >= cool_reverse and seconds_since_change >= delay_min * 60 %}
-                      cool
-                    {% else %}
-                      heat
-                    {% endif %}
-                  {% elif current_mode == 'cool' %}
-                    {% if temp <= heat_reverse and seconds_since_change >= delay_min * 60 %}
-                      heat
-                    {% else %}
-                      cool
-                    {% endif %}
-                  {% else %}
-                    heat
-                  {% endif %}
-              target:
-                entity_id: input_text.condenser_mode_request
-
-        - conditions:
-            - condition: template
-              value_template: "{{ has_heat and not has_cool }}"
-          sequence:
-            - service: input_text.set_value
-              data:
-                value: >
-                  {% set temp = priority_sp + priority_dev %}
-                  {% if current_mode == 'cool' %}
-                    {% if temp <= heat_reverse and seconds_since_change >= delay_min * 60 %}
-                      heat
-                    {% else %}
-                      cool
-                    {% endif %}
-                  {% else %}
-                    heat
-                  {% endif %}
-              target:
-                entity_id: input_text.condenser_mode_request
-
-        - conditions:
-            - condition: template
-              value_template: "{{ has_cool and not has_heat }}"
-          sequence:
-            - service: input_text.set_value
-              data:
-                value: >
-                  {% set temp = priority_sp + priority_dev %}
-                  {% if current_mode == 'heat' %}
-                    {% if temp >= cool_reverse and seconds_since_change >= delay_min * 60 %}
-                      cool
-                    {% else %}
-                      heat
-                    {% endif %}
-                  {% else %}
-                    cool
-                  {% endif %}
-              target:
-                entity_id: input_text.condenser_mode_request
+    - service: input_text.set_value
+      target:
+        entity_id: input_text.condenser_mode_request
+      data:
+        value: "{{ new_mode }}"

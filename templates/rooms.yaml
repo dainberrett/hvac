@@ -1,109 +1,141 @@
-template:
+# ==========================================================
+# HVAC Room Template Sensors
+# ==========================================================
+# Included via configuration.yaml:
+#   template:
+#     - !include templates/hvac/rooms.yaml
+# ==========================================================
 
+binary_sensor:
+  # ==========================================================
+  # Night Mode Helper
+  # ==========================================================
+  - name: hvac_night_mode
+    state: >
+      {% set start = states('input_datetime.night_mode_start') %}
+      {% set end = states('input_datetime.night_mode_end') %}
+      {% set now_time = now().strftime('%H:%M:%S') %}
+      {% if start > end %}
+        {{ now_time >= start or now_time < end }}
+      {% else %}
+        {{ now_time >= start and now_time < end }}
+      {% endif %}
+
+sensor:
   # ==========================================================
   # Bedroom
   # ==========================================================
+  - name: bedroom_temperature_deviation
+    unit_of_measurement: "°F"
+    state: >
+      {{ (states('sensor.temperature_sensor_bedroom_temperature') | float -
+         states('input_number.bedroom_setpoint') | float) | round(1) }}
 
-  - sensor:
-      - name: bedroom_temperature_deviation
-        state: >
-          {{ states('sensor.temperature_sensor_bedroom_temperature') | float -
-             states('input_number.bedroom_setpoint') | float }}
+  - name: bedroom_out_of_setpoint
+    state: >
+      {% set dev = states('sensor.bedroom_temperature_deviation') | float %}
+      {% set threshold = states('input_number.deviation_threshold') | float(2) %}
+      {{ dev | abs >= threshold }}
 
-      - name: bedroom_out_of_setpoint
-        state: >
-          {% set temp = states('sensor.temperature_sensor_bedroom_temperature') | float %}
-          {% set setpoint = states('input_number.bedroom_setpoint') | float %}
-          {% set db = states('input_number.deadband') | float %}
-          {{ temp > setpoint + db or temp < setpoint - db }}
-
-      - name: bedroom_target_direction
-        state: >
-          {% set temp = states('sensor.temperature_sensor_bedroom_temperature') | float %}
-          {% set setpoint = states('input_number.bedroom_setpoint') | float %}
-          {% set db = states('input_number.deadband') | float %}
-          {% if temp > setpoint + db %}cool
-          {% elif temp < setpoint - db %}heat
-          {% else %}none
-          {% endif %}
+  - name: bedroom_target_direction
+    state: >
+      {% set dev = states('sensor.bedroom_temperature_deviation') | float %}
+      {% set threshold = states('input_number.deviation_threshold') | float(2) %}
+      {# Trigger at threshold, but continue until setpoint reached #}
+      {% set currently_out = states('sensor.bedroom_out_of_setpoint') == 'True' %}
+      {% if dev >= threshold %}cool
+      {% elif dev <= -threshold %}heat
+      {% elif currently_out and dev > 0 %}cool
+      {% elif currently_out and dev < 0 %}heat
+      {% else %}none
+      {% endif %}
 
   # ==========================================================
   # Office
   # ==========================================================
+  - name: office_temperature_deviation
+    unit_of_measurement: "°F"
+    state: >
+      {{ (states('sensor.temperature_sensor_office_temperature') | float -
+         states('input_number.office_setpoint') | float) | round(1) }}
 
-  - sensor:
-      - name: office_temperature_deviation
-        state: >
-          {{ states('sensor.temperature_sensor_office_temperature') | float -
-             states('input_number.office_setpoint') | float }}
+  - name: office_out_of_setpoint
+    state: >
+      {% set dev = states('sensor.office_temperature_deviation') | float %}
+      {% set is_night = is_state('binary_sensor.hvac_night_mode', 'on') %}
+      {% set threshold = states('input_number.night_non_priority_threshold') | float(6) if is_night else states('input_number.deviation_threshold') | float(2) %}
+      {{ dev | abs >= threshold }}
 
-      - name: office_out_of_setpoint
-        state: >
-          {% set temp = states('sensor.temperature_sensor_office_temperature') | float %}
-          {% set setpoint = states('input_number.office_setpoint') | float %}
-          {% set db = states('input_number.deadband') | float %}
-          {{ temp > setpoint + db or temp < setpoint - db }}
-
-      - name: office_target_direction
-        state: >
-          {% set temp = states('sensor.temperature_sensor_office_temperature') | float %}
-          {% set setpoint = states('input_number.office_setpoint') | float %}
-          {% set db = states('input_number.deadband') | float %}
-          {% if temp > setpoint + db %}cool
-          {% elif temp < setpoint - db %}heat
-          {% else %}none
-          {% endif %}
+  - name: office_target_direction
+    state: >
+      {% set dev = states('sensor.office_temperature_deviation') | float %}
+      {% set is_night = is_state('binary_sensor.hvac_night_mode', 'on') %}
+      {% set threshold = states('input_number.night_non_priority_threshold') | float(6) if is_night else states('input_number.deviation_threshold') | float(2) %}
+      {# Trigger at threshold, but continue until setpoint reached #}
+      {% set currently_out = states('sensor.office_out_of_setpoint') == 'True' %}
+      {% if dev >= threshold %}cool
+      {% elif dev <= -threshold %}heat
+      {% elif currently_out and dev > 0 %}cool
+      {% elif currently_out and dev < 0 %}heat
+      {% else %}none
+      {% endif %}
 
   # ==========================================================
   # Living Room
   # ==========================================================
+  - name: living_room_temperature_deviation
+    unit_of_measurement: "°F"
+    state: >
+      {{ (states('sensor.temperature_sensor_living_room_temperature') | float -
+         states('input_number.living_room_setpoint') | float) | round(1) }}
 
-  - sensor:
-      - name: living_room_temperature_deviation
-        state: >
-          {{ states('sensor.temperature_sensor_living_room_temperature') | float -
-             states('input_number.living_room_setpoint') | float }}
+  - name: living_room_out_of_setpoint
+    state: >
+      {% set dev = states('sensor.living_room_temperature_deviation') | float %}
+      {% set is_night = is_state('binary_sensor.hvac_night_mode', 'on') %}
+      {% set threshold = states('input_number.night_non_priority_threshold') | float(6) if is_night else states('input_number.deviation_threshold') | float(2) %}
+      {{ dev | abs >= threshold }}
 
-      - name: living_room_out_of_setpoint
-        state: >
-          {% set temp = states('sensor.temperature_sensor_living_room_temperature') | float %}
-          {% set setpoint = states('input_number.living_room_setpoint') | float %}
-          {% set db = states('input_number.deadband') | float %}
-          {{ temp > setpoint + db or temp < setpoint - db }}
-
-      - name: living_room_target_direction
-        state: >
-          {% set temp = states('sensor.temperature_sensor_living_room_temperature') | float %}
-          {% set setpoint = states('input_number.living_room_setpoint') | float %}
-          {% set db = states('input_number.deadband') | float %}
-          {% if temp > setpoint + db %}cool
-          {% elif temp < setpoint - db %}heat
-          {% else %}none
-          {% endif %}
+  - name: living_room_target_direction
+    state: >
+      {% set dev = states('sensor.living_room_temperature_deviation') | float %}
+      {% set is_night = is_state('binary_sensor.hvac_night_mode', 'on') %}
+      {% set threshold = states('input_number.night_non_priority_threshold') | float(6) if is_night else states('input_number.deviation_threshold') | float(2) %}
+      {# Trigger at threshold, but continue until setpoint reached #}
+      {% set currently_out = states('sensor.living_room_out_of_setpoint') == 'True' %}
+      {% if dev >= threshold %}cool
+      {% elif dev <= -threshold %}heat
+      {% elif currently_out and dev > 0 %}cool
+      {% elif currently_out and dev < 0 %}heat
+      {% else %}none
+      {% endif %}
 
   # ==========================================================
   # First Floor / Guest Area
   # ==========================================================
+  - name: first_floor_temperature_deviation
+    unit_of_measurement: "°F"
+    state: >
+      {{ (states('sensor.temperature_sensor_first_floor_temperature') | float -
+         states('input_number.first_floor_setpoint') | float) | round(1) }}
 
-  - sensor:
-      - name: first_floor_temperature_deviation
-        state: >
-          {{ states('sensor.temperature_sensor_first_floor_temperature') | float -
-             states('input_number.first_floor_setpoint') | float }}
+  - name: first_floor_out_of_setpoint
+    state: >
+      {% set dev = states('sensor.first_floor_temperature_deviation') | float %}
+      {% set is_night = is_state('binary_sensor.hvac_night_mode', 'on') %}
+      {% set threshold = states('input_number.night_non_priority_threshold') | float(6) if is_night else states('input_number.deviation_threshold') | float(2) %}
+      {{ dev | abs >= threshold }}
 
-      - name: first_floor_out_of_setpoint
-        state: >
-          {% set temp = states('sensor.temperature_sensor_first_floor_temperature') | float %}
-          {% set setpoint = states('input_number.first_floor_setpoint') | float %}
-          {% set db = states('input_number.deadband') | float %}
-          {{ temp > setpoint + db or temp < setpoint - db }}
-
-      - name: first_floor_target_direction
-        state: >
-          {% set temp = states('sensor.temperature_sensor_first_floor_temperature') | float %}
-          {% set setpoint = states('input_number.first_floor_setpoint') | float %}
-          {% set db = states('input_number.deadband') | float %}
-          {% if temp > setpoint + db %}cool
-          {% elif temp < setpoint - db %}heat
-          {% else %}none
-          {% endif %}
+  - name: first_floor_target_direction
+    state: >
+      {% set dev = states('sensor.first_floor_temperature_deviation') | float %}
+      {% set is_night = is_state('binary_sensor.hvac_night_mode', 'on') %}
+      {% set threshold = states('input_number.night_non_priority_threshold') | float(6) if is_night else states('input_number.deviation_threshold') | float(2) %}
+      {# Trigger at threshold, but continue until setpoint reached #}
+      {% set currently_out = states('sensor.first_floor_out_of_setpoint') == 'True' %}
+      {% if dev >= threshold %}cool
+      {% elif dev <= -threshold %}heat
+      {% elif currently_out and dev > 0 %}cool
+      {% elif currently_out and dev < 0 %}heat
+      {% else %}none
+      {% endif %}

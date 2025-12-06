@@ -1,336 +1,167 @@
 - id: hvac_head_units_control
   alias: HVAC Head Units Control
   mode: restart
-  description: Per room control based on global mode and room needs (with bias helpers)
+  description: Control each head unit based on condenser mode and room deviation
 
   trigger:
     - platform: state
       entity_id: input_text.condenser_mode_request
     - platform: state
       entity_id:
-        - sensor.temperature_sensor_bedroom_temperature
-        - sensor.temperature_sensor_office_temperature
-        - sensor.temperature_sensor_living_room_temperature
-        - sensor.temperature_sensor_first_floor_temperature
+        - sensor.bedroom_temperature_deviation
+        - sensor.office_temperature_deviation
+        - sensor.living_room_temperature_deviation
+        - sensor.first_floor_temperature_deviation
         - input_number.bedroom_setpoint
         - input_number.office_setpoint
         - input_number.living_room_setpoint
         - input_number.first_floor_setpoint
-        - input_number.living_room_bias
-        - input_number.first_floor_bias
 
   variables:
-    mode_request: "{{ states('input_text.condenser_mode_request') }}"
+    # Current condenser mode
+    mode: "{{ states('input_text.condenser_mode_request') }}"
 
-    threshold: 2
+    # Neutral temperatures (head unit target when room doesn't need conditioning)
+    neutral_temp: "{{ 60 if mode == 'heat' else 80 }}"
 
-    neutral_heat_temp: 60
-    neutral_cool_temp: 80
+    # Deviation threshold
+    threshold: "{{ states('input_number.deviation_threshold') | float(2) }}"
 
-    bedroom_temp: "{{ states('sensor.temperature_sensor_bedroom_temperature') | float }}"
-    office_temp: "{{ states('sensor.temperature_sensor_office_temperature') | float }}"
-    living_temp: "{{ states('sensor.temperature_sensor_living_room_temperature') | float }}"
-    first_temp: "{{ states('sensor.temperature_sensor_first_floor_temperature') | float }}"
+    # Room setpoints
+    bedroom_sp: "{{ states('input_number.bedroom_setpoint') | float | round(0) | int }}"
+    office_sp: "{{ states('input_number.office_setpoint') | float | round(0) | int }}"
+    living_sp: "{{ states('input_number.living_room_setpoint') | float | round(0) | int }}"
+    first_sp: "{{ states('input_number.first_floor_setpoint') | float | round(0) | int }}"
 
-    bedroom_sp: "{{ states('input_number.bedroom_setpoint') | float }}"
-    office_sp: "{{ states('input_number.office_setpoint') | float }}"
-    living_sp: "{{ states('input_number.living_room_setpoint') | float }}"
-    first_sp: "{{ states('input_number.first_floor_setpoint') | float }}"
+    # First floor sensor offset - compensates for Mitsubishi's built-in sensor
+    # reading warmer than actual room temp (sensor is near ceiling/unit)
+    first_floor_offset: "{{ states('input_number.first_floor_temp_offset') | float(3) }}"
 
-    living_bias: "{{ states('input_number.living_room_bias') | float }}"
-    first_bias: "{{ states('input_number.first_floor_bias') | float }}"
+    # Room deviations (from template sensors)
+    bedroom_dev: "{{ states('sensor.bedroom_temperature_deviation') | float }}"
+    office_dev: "{{ states('sensor.office_temperature_deviation') | float }}"
+    living_dev: "{{ states('sensor.living_room_temperature_deviation') | float }}"
+    first_dev: "{{ states('sensor.first_floor_temperature_deviation') | float }}"
 
-    bedroom_dev: "{{ bedroom_temp - bedroom_sp }}"
-    office_dev: "{{ office_temp - office_sp }}"
-    living_dev: "{{ living_temp - living_sp }}"
-    first_dev: "{{ first_temp - first_sp }}"
+    # Room needs conditioning? (matches condenser mode direction)
+    bedroom_needs: "{{ (mode == 'heat' and bedroom_dev <= -threshold) or (mode == 'cool' and bedroom_dev >= threshold) }}"
+    office_needs: "{{ (mode == 'heat' and office_dev <= -threshold) or (mode == 'cool' and office_dev >= threshold) }}"
+    living_needs: "{{ (mode == 'heat' and living_dev <= -threshold) or (mode == 'cool' and living_dev >= threshold) }}"
+    first_needs: "{{ (mode == 'heat' and first_dev <= -threshold) or (mode == 'cool' and first_dev >= threshold) }}"
 
-    bedroom_need: >
-      {% if bedroom_dev < -threshold %}heat
-      {% elif bedroom_dev > threshold %}cool
-      {% else %}none
+    # Target temperatures
+    bedroom_target: "{{ bedroom_sp if bedroom_needs else neutral_temp }}"
+    office_target: "{{ office_sp if office_needs else neutral_temp }}"
+    living_target: "{{ living_sp if living_needs else neutral_temp }}"
+    # First floor: apply offset to compensate for Mitsubishi sensor placement
+    # Heat mode: tell unit to heat higher (sp + offset) so it runs longer
+    # Cool mode: tell unit to cool lower (sp - offset) so it runs longer
+    first_target: >
+      {% if not first_needs %}
+        {{ neutral_temp }}
+      {% elif mode == 'heat' %}
+        {{ first_sp + first_floor_offset }}
+      {% else %}
+        {{ first_sp - first_floor_offset }}
       {% endif %}
-    office_need: >
-      {% if office_dev < -threshold %}heat
-      {% elif office_dev > threshold %}cool
-      {% else %}none
+
+    # Fan speeds based on deviation magnitude
+    # > 3°F = high, 1.5-3°F = medium, ≤ 1.5°F = low
+    # Rooms not needing conditioning run on low for circulation
+    bedroom_fan: >
+      {% if not bedroom_needs %}low
+      {% elif bedroom_dev | abs > 3 %}high
+      {% elif bedroom_dev | abs > 1.5 %}medium
+      {% else %}low
       {% endif %}
-    living_need: >
-      {% if living_dev < -threshold %}heat
-      {% elif living_dev > threshold %}cool
-      {% else %}none
+    office_fan: >
+      {% if not office_needs %}low
+      {% elif office_dev | abs > 3 %}high
+      {% elif office_dev | abs > 1.5 %}medium
+      {% else %}low
       {% endif %}
-    first_need: >
-      {% if first_dev < -threshold %}heat
-      {% elif first_dev > threshold %}cool
-      {% else %}none
+    living_fan: >
+      {% if not living_needs %}low
+      {% elif living_dev | abs > 3 %}high
+      {% elif living_dev | abs > 1.5 %}medium
+      {% else %}low
       {% endif %}
+    # First floor is 600 sq ft - always run high when being conditioned
+    first_fan: "{{ 'high' if first_needs else 'low' }}"
+
+  condition:
+    - condition: template
+      value_template: "{{ mode in ['heat', 'cool'] }}"
 
   action:
-    - choose:
+    # Bedroom
+    - service: climate.set_hvac_mode
+      target:
+        entity_id: climate.bedroom_air
+      data:
+        hvac_mode: "{{ mode }}"
+    - service: climate.set_temperature
+      target:
+        entity_id: climate.bedroom_air
+      data:
+        temperature: "{{ bedroom_target }}"
+        hvac_mode: "{{ mode }}"
+    - service: climate.set_fan_mode
+      target:
+        entity_id: climate.bedroom_air
+      data:
+        fan_mode: "{{ bedroom_fan }}"
 
-        ######################################################################
-        # GLOBAL HEAT
-        ######################################################################
-        - conditions:
-            - condition: template
-              value_template: "{{ mode_request == 'heat' }}"
-          sequence:
+    # Office
+    - service: climate.set_hvac_mode
+      target:
+        entity_id: climate.office_air
+      data:
+        hvac_mode: "{{ mode }}"
+    - service: climate.set_temperature
+      target:
+        entity_id: climate.office_air
+      data:
+        temperature: "{{ office_target }}"
+        hvac_mode: "{{ mode }}"
+    - service: climate.set_fan_mode
+      target:
+        entity_id: climate.office_air
+      data:
+        fan_mode: "{{ office_fan }}"
 
-            # BEDROOM (bias = 0)
-            - service: climate.set_hvac_mode
-              target: { entity_id: climate.bedroom_air }
-              data: { hvac_mode: heat }
+    # Living Room
+    - service: climate.set_hvac_mode
+      target:
+        entity_id: climate.living_room_air
+      data:
+        hvac_mode: "{{ mode }}"
+    - service: climate.set_temperature
+      target:
+        entity_id: climate.living_room_air
+      data:
+        temperature: "{{ living_target }}"
+        hvac_mode: "{{ mode }}"
+    - service: climate.set_fan_mode
+      target:
+        entity_id: climate.living_room_air
+      data:
+        fan_mode: "{{ living_fan }}"
 
-            - service: climate.set_temperature
-              target: { entity_id: climate.bedroom_air }
-              data:
-                temperature: >
-                  {% if bedroom_need == 'heat' %}
-                    {{ bedroom_sp | round(0) | int }}
-                  {% else %}
-                    {{ neutral_heat_temp }}
-                  {% endif %}
-                hvac_mode: heat
-
-            - service: climate.set_fan_mode
-              target: { entity_id: climate.bedroom_air }
-              data:
-                fan_mode: >
-                  {% if bedroom_need != 'heat' %}
-                    low
-                  {% else %}
-                    {% set a = bedroom_dev | abs %}
-                    {% if a > 3 %}high
-                    {% elif a > 1.5 %}medium
-                    {% elif a > 0.5 %}low
-                    {% else %}auto
-                    {% endif %}
-                  {% endif %}
-
-            # OFFICE (bias = 0)
-            - service: climate.set_hvac_mode
-              target: { entity_id: climate.office_air }
-              data: { hvac_mode: heat }
-
-            - service: climate.set_temperature
-              target: { entity_id: climate.office_air }
-              data:
-                temperature: >
-                  {% if office_need == 'heat' %}
-                    {{ office_sp | round(0) | int }}
-                  {% else %}
-                    {{ neutral_heat_temp }}
-                  {% endif %}
-                hvac_mode: heat
-
-            - service: climate.set_fan_mode
-              target: { entity_id: climate.office_air }
-              data:
-                fan_mode: >
-                  {% if office_need != 'heat' %}
-                    low
-                  {% else %}
-                    {% set a = office_dev | abs %}
-                    {% if a > 3 %}high
-                    {% elif a > 1.5 %}medium
-                    {% elif a > 0.5 %}low
-                    {% else %}auto
-                    {% endif %}
-                  {% endif %}
-
-            # LIVING ROOM (bias = +living_bias)
-            - service: climate.set_hvac_mode
-              target: { entity_id: climate.living_room_air }
-              data: { hvac_mode: heat }
-
-            - service: climate.set_temperature
-              target: { entity_id: climate.living_room_air }
-              data:
-                temperature: >
-                  {% if living_need == 'heat' %}
-                    {{ (living_sp + living_bias) | round(0) | int }}
-                  {% else %}
-                    {{ neutral_heat_temp }}
-                  {% endif %}
-                hvac_mode: heat
-
-            - service: climate.set_fan_mode
-              target: { entity_id: climate.living_room_air }
-              data:
-                fan_mode: >
-                  {% if living_need != 'heat' %}
-                    low
-                  {% else %}
-                    {% set a = living_dev | abs %}
-                    {% if a > 3 %}high
-                    {% elif a > 1.5 %}medium
-                    {% elif a > 0.5 %}low
-                    {% else %}auto
-                    {% endif %}
-                  {% endif %}
-
-            # FIRST FLOOR (bias = +first_bias)
-            - service: climate.set_hvac_mode
-              target: { entity_id: climate.shop_air }
-              data: { hvac_mode: heat }
-
-            - service: climate.set_temperature
-              target: { entity_id: climate.shop_air }
-              data:
-                temperature: >
-                  {% if first_need == 'heat' %}
-                    {{ (first_sp + first_bias) | round(0) | int }}
-                  {% else %}
-                    {{ neutral_heat_temp }}
-                  {% endif %}
-                hvac_mode: heat
-
-            - service: climate.set_fan_mode
-              target: { entity_id: climate.shop_air }
-              data:
-                fan_mode: >
-                  {% if first_need != 'heat' %}
-                    low
-                  {% else %}
-                    {% set a = first_dev | abs %}
-                    {% if a > 3 %}high
-                    {% elif a > 1.5 %}medium
-                    {% elif a > 0.5 %}low
-                    {% else %}auto
-                    {% endif %}
-                  {% endif %}
-
-        ######################################################################
-        # GLOBAL COOL
-        ######################################################################
-        - conditions:
-            - condition: template
-              value_template: "{{ mode_request == 'cool' }}"
-          sequence:
-
-            # BEDROOM (bias = 0)
-            - service: climate.set_hvac_mode
-              target: { entity_id: climate.bedroom_air }
-              data: { hvac_mode: cool }
-
-            - service: climate.set_temperature
-              target: { entity_id: climate.bedroom_air }
-              data:
-                temperature: >
-                  {% if bedroom_need == 'cool' %}
-                    {{ bedroom_sp | round(0) | int }}
-                  {% else %}
-                    {{ neutral_cool_temp }}
-                  {% endif %}
-                hvac_mode: cool
-
-            - service: climate.set_fan_mode
-              target: { entity_id: climate.bedroom_air }
-              data:
-                fan_mode: >
-                  {% if bedroom_need != 'cool' %}
-                    low
-                  {% else %}
-                    {% set a = bedroom_dev | abs %}
-                    {% if a > 3 %}high
-                    {% elif a > 1.5 %}medium
-                    {% elif a > 0.5 %}low
-                    {% else %}auto
-                    {% endif %}
-                  {% endif %}
-
-            # OFFICE (bias = 0)
-            - service: climate.set_hvac_mode
-              target: { entity_id: climate.office_air }
-              data: { hvac_mode: cool }
-
-            - service: climate.set_temperature
-              target: { entity_id: climate.office_air }
-              data:
-                temperature: >
-                  {% if office_need == 'cool' %}
-                    {{ office_sp | round(0) | int }}
-                  {% else %}
-                    {{ neutral_cool_temp }}
-                  {% endif %}
-                hvac_mode: cool
-
-            - service: climate.set_fan_mode
-              target: { entity_id: climate.office_air }
-              data:
-                fan_mode: >
-                  {% if office_need != 'cool' %}
-                    low
-                  {% else %}
-                    {% set a = office_dev | abs %}
-                    {% if a > 3 %}high
-                    {% elif a > 1.5 %}medium
-                    {% elif a > 0.5 %}low
-                    {% else %}auto
-                    {% endif %}
-                  {% endif %}
-
-            # LIVING ROOM (bias = +living_bias)
-            - service: climate.set_hvac_mode
-              target: { entity_id: climate.living_room_air }
-              data: { hvac_mode: cool }
-
-            - service: climate.set_temperature
-              target: { entity_id: climate.living_room_air }
-              data:
-                temperature: >
-                  {% if living_need == 'cool' %}
-                    {{ (living_sp + living_bias) | round(0) | int }}
-                  {% else %}
-                    {{ neutral_cool_temp }}
-                  {% endif %}
-                hvac_mode: cool
-
-            - service: climate.set_fan_mode
-              target: { entity_id: climate.living_room_air }
-              data:
-                fan_mode: >
-                  {% if living_need != 'cool' %}
-                    low
-                  {% else %}
-                    {% set a = living_dev | abs %}
-                    {% if a > 3 %}high
-                    {% elif a > 1.5 %}medium
-                    {% elif a > 0.5 %}low
-                    {% else %}auto
-                    {% endif %}
-                  {% endif %}
-
-            # FIRST FLOOR (bias = +first_bias)
-            - service: climate.set_hvac_mode
-              target: { entity_id: climate.shop_air }
-              data: { hvac_mode: cool }
-
-            - service: climate.set_temperature
-              target: { entity_id: climate.shop_air }
-              data:
-                temperature: >
-                  {% if first_need == 'cool' %}
-                    {{ (first_sp + first_bias) | round(0) | int }}
-                  {% else %}
-                    {{ neutral_cool_temp }}
-                  {% endif %}
-                hvac_mode: cool
-
-            - service: climate.set_fan_mode
-              target: { entity_id: climate.shop_air }
-              data:
-                fan_mode: >
-                  {% if first_need != 'cool' %}
-                    low
-                  {% else %}
-                    {% set a = first_dev | abs %}
-                    {% if a > 3 %}high
-                    {% elif a > 1.5 %}medium
-                    {% elif a > 0.5 %}low
-                    {% else %}auto
-                    {% endif %}
-                  {% endif %}
-
-      default: []
+    # First Floor (Shop)
+    - service: climate.set_hvac_mode
+      target:
+        entity_id: climate.shop_air
+      data:
+        hvac_mode: "{{ mode }}"
+    - service: climate.set_temperature
+      target:
+        entity_id: climate.shop_air
+      data:
+        temperature: "{{ first_target }}"
+        hvac_mode: "{{ mode }}"
+    - service: climate.set_fan_mode
+      target:
+        entity_id: climate.shop_air
+      data:
+        fan_mode: "{{ first_fan }}"

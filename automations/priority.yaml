@@ -8,47 +8,46 @@
       minutes: "/1"
 
   variables:
-    # Current temps
-    bedroom_temp: "{{ states('sensor.temperature_sensor_bedroom_temperature') | float }}"
-    office_temp: "{{ states('sensor.temperature_sensor_office_temperature') | float }}"
-    living_temp: "{{ states('sensor.temperature_sensor_living_room_temperature') | float }}"
-    first_temp: "{{ states('sensor.temperature_sensor_first_floor_temperature') | float }}"
-
-    # Setpoints
-    bedroom_sp: "{{ states('input_number.bedroom_setpoint') | float }}"
-    office_sp: "{{ states('input_number.office_setpoint') | float }}"
-    living_sp: "{{ states('input_number.living_room_setpoint') | float }}"
-    first_sp: "{{ states('input_number.first_floor_setpoint') | float }}"
-
-    # Deviations (signed)
-    bedroom_dev: "{{ bedroom_temp - bedroom_sp }}"
-    office_dev: "{{ office_temp - office_sp }}"
-    living_dev: "{{ living_temp - living_sp }}"
-    first_dev: "{{ first_temp - first_sp }}"
-
-    # Absolute deviations
-    bedroom_abs: "{{ bedroom_dev | abs }}"
-    office_abs: "{{ office_dev | abs }}"
-    living_abs: "{{ living_dev | abs }}"
-    first_abs: "{{ first_dev | abs }}"
-
-    # Deviation threshold
-    threshold: 2
+    # Deviation threshold (from config or default)
+    threshold: "{{ states('input_number.deviation_threshold') | float(2) }}"
 
     # Delay threshold (minutes)
-    delay_min: "{{ states('input_number.target_delay_minutes') | int }}"
+    delay_min: "{{ states('input_number.deviation_delay_minutes') | float(20) }}"
 
-    # Booleans: room outside setpoint
-    bedroom_out: "{{ bedroom_abs >= threshold }}"
-    office_out: "{{ office_abs >= threshold }}"
-    living_out: "{{ living_abs >= threshold }}"
-    first_out: "{{ first_abs >= threshold }}"
+    # Use template sensors for out-of-setpoint status
+    # These track when a room crossed the deviation threshold
+    bedroom_out: "{{ states('sensor.bedroom_out_of_setpoint') == 'True' }}"
+    office_out: "{{ states('sensor.office_out_of_setpoint') == 'True' }}"
+    living_out: "{{ states('sensor.living_room_out_of_setpoint') == 'True' }}"
+    first_out: "{{ states('sensor.first_floor_out_of_setpoint') == 'True' }}"
 
-    # Time since last state change (in minutes)
-    bedroom_elapsed: "{{ (now() - states.sensor.temperature_sensor_bedroom_temperature.last_changed).seconds / 60 }}"
-    office_elapsed: "{{ (now() - states.sensor.temperature_sensor_office_temperature.last_changed).seconds / 60 }}"
-    living_elapsed: "{{ (now() - states.sensor.temperature_sensor_living_room_temperature.last_changed).seconds / 60 }}"
-    first_elapsed: "{{ (now() - states.sensor.temperature_sensor_first_floor_temperature.last_changed).seconds / 60 }}"
+    # Time since room entered deviation zone (in minutes)
+    # last_changed tells us when the sensor state last changed
+    # We only count elapsed time if the room is currently out of setpoint
+    bedroom_elapsed: >
+      {% if bedroom_out %}
+        {{ (now() - states.sensor.bedroom_out_of_setpoint.last_changed).total_seconds() / 60 }}
+      {% else %}
+        0
+      {% endif %}
+    office_elapsed: >
+      {% if office_out %}
+        {{ (now() - states.sensor.office_out_of_setpoint.last_changed).total_seconds() / 60 }}
+      {% else %}
+        0
+      {% endif %}
+    living_elapsed: >
+      {% if living_out %}
+        {{ (now() - states.sensor.living_room_out_of_setpoint.last_changed).total_seconds() / 60 }}
+      {% else %}
+        0
+      {% endif %}
+    first_elapsed: >
+      {% if first_out %}
+        {{ (now() - states.sensor.first_floor_out_of_setpoint.last_changed).total_seconds() / 60 }}
+      {% else %}
+        0
+      {% endif %}
 
     # Booleans: deviation persisted >= delay
     bedroom_ready: "{{ bedroom_out and (bedroom_elapsed >= delay_min) }}"
@@ -56,11 +55,17 @@
     living_ready: "{{ living_out and (living_elapsed >= delay_min) }}"
     first_ready: "{{ first_out and (first_elapsed >= delay_min) }}"
 
+    # Absolute deviations (for tiebreaking if needed)
+    bedroom_abs: "{{ states('sensor.bedroom_temperature_deviation') | float | abs }}"
+    office_abs: "{{ states('sensor.office_temperature_deviation') | float | abs }}"
+    living_abs: "{{ states('sensor.living_room_temperature_deviation') | float | abs }}"
+    first_abs: "{{ states('sensor.first_floor_temperature_deviation') | float | abs }}"
+
     # Priority ranks
     bedroom_rank: "{{ states('input_number.bedroom_priority') | int }}"
     office_rank: "{{ states('input_number.office_priority') | int }}"
-    first_rank: "{{ states('input_number.first_floor_priority') | int }}"
     living_rank: "{{ states('input_number.living_room_priority') | int }}"
+    first_rank: "{{ states('input_number.first_floor_priority') | int }}"
 
     # Room eligibility map: room_name → (is_ready, rank, deviation)
     rooms: >
@@ -73,7 +78,7 @@
         }
       }}
 
-    # Final priority room selection
+    # Final priority room selection: lowest rank among eligible rooms
     priority_room: >
       {%- set eligible = rooms.items() | selectattr('1.0') | list -%}
       {%- if eligible | length == 0 -%}

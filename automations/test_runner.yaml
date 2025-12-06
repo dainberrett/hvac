@@ -1,0 +1,1371 @@
+# =============================================================================
+# HVAC Logic Test Runner
+# =============================================================================
+# This automation runs through all test scenarios to validate HVAC logic.
+# Trigger manually from Developer Tools or the dashboard.
+#
+# Tests run in sequence, each completing in milliseconds.
+# Results are tracked in input_text/input_number helpers for dashboard display.
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Main Test Runner - Orchestrates all tests
+# -----------------------------------------------------------------------------
+- id: hvac_test_runner
+  alias: "HVAC Test Runner"
+  description: "Run all HVAC logic tests"
+  mode: single
+
+  trigger:
+    - platform: state
+      entity_id: input_boolean.hvac_test_mode
+      to: "on"
+      id: manual_trigger
+
+  action:
+    # -------------------------------------------------------------------------
+    # Initialize test environment
+    # -------------------------------------------------------------------------
+    - service: input_boolean.turn_on
+      target:
+        entity_id: input_boolean.hvac_test_running
+
+    - service: input_number.set_value
+      target:
+        entity_id: input_number.test_current_index
+      data:
+        value: 0
+
+    - service: input_number.set_value
+      target:
+        entity_id: input_number.test_passed_count
+      data:
+        value: 0
+
+    - service: input_number.set_value
+      target:
+        entity_id: input_number.test_failed_count
+      data:
+        value: 0
+
+    - service: input_text.set_value
+      target:
+        entity_id: input_text.test_failed_list
+      data:
+        value: ""
+
+    # Set default setpoints for consistent testing
+    - service: input_number.set_value
+      target:
+        entity_id: input_number.bedroom_setpoint
+      data:
+        value: 65
+
+    - service: input_number.set_value
+      target:
+        entity_id: input_number.office_setpoint
+      data:
+        value: 68
+
+    - service: input_number.set_value
+      target:
+        entity_id: input_number.living_room_setpoint
+      data:
+        value: 68
+
+    - service: input_number.set_value
+      target:
+        entity_id: input_number.first_floor_setpoint
+      data:
+        value: 68
+
+    # Set default priorities (bedroom=1, office=2, first=3, living=4)
+    - service: input_number.set_value
+      target:
+        entity_id: input_number.bedroom_priority
+      data:
+        value: 1
+
+    - service: input_number.set_value
+      target:
+        entity_id: input_number.office_priority
+      data:
+        value: 2
+
+    - service: input_number.set_value
+      target:
+        entity_id: input_number.first_floor_priority
+      data:
+        value: 3
+
+    - service: input_number.set_value
+      target:
+        entity_id: input_number.living_room_priority
+      data:
+        value: 4
+
+    # Set default thresholds
+    - service: input_number.set_value
+      target:
+        entity_id: input_number.deviation_threshold
+      data:
+        value: 2
+
+    - service: input_number.set_value
+      target:
+        entity_id: input_number.night_non_priority_threshold
+      data:
+        value: 5
+
+    # Set day mode time for testing (noon)
+    - service: input_datetime.set_datetime
+      target:
+        entity_id: input_datetime.test_simulated_time
+      data:
+        time: "12:00:00"
+
+    # Turn off guest override
+    - service: input_boolean.turn_off
+      target:
+        entity_id: input_boolean.guest_override
+
+    # Brief delay to let templates update
+    - delay:
+        milliseconds: 100
+
+    # -------------------------------------------------------------------------
+    # TEST 1: No room needs conditioning - priority should be "none"
+    # -------------------------------------------------------------------------
+    - service: input_text.set_value
+      target:
+        entity_id: input_text.test_current_name
+      data:
+        value: "1: No conditioning needed"
+
+    # All rooms at setpoint
+    - service: input_number.set_value
+      target:
+        entity_id: input_number.test_bedroom_temperature
+      data:
+        value: 65
+
+    - service: input_number.set_value
+      target:
+        entity_id: input_number.test_office_temperature
+      data:
+        value: 68
+
+    - service: input_number.set_value
+      target:
+        entity_id: input_number.test_living_room_temperature
+      data:
+        value: 68
+
+    - service: input_number.set_value
+      target:
+        entity_id: input_number.test_first_floor_temperature
+      data:
+        value: 68
+
+    - delay:
+        milliseconds: 50
+
+    # Check result: all rooms should show "none" for target direction
+    - if:
+        - condition: template
+          value_template: >
+            {{ states('sensor.test_bedroom_target_direction') == 'none' and
+               states('sensor.test_office_target_direction') == 'none' and
+               states('sensor.test_living_room_target_direction') == 'none' and
+               states('sensor.test_first_floor_target_direction') == 'none' }}
+      then:
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_current_status
+          data:
+            value: "PASSED"
+        - service: input_number.set_value
+          target:
+            entity_id: input_number.test_passed_count
+          data:
+            value: "{{ states('input_number.test_passed_count') | int + 1 }}"
+      else:
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_current_status
+          data:
+            value: "FAILED"
+        - service: input_number.set_value
+          target:
+            entity_id: input_number.test_failed_count
+          data:
+            value: "{{ states('input_number.test_failed_count') | int + 1 }}"
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_failed_list
+          data:
+            value: "{{ states('input_text.test_failed_list') }}1: No conditioning needed; "
+
+    - delay:
+        milliseconds: 50
+
+    # -------------------------------------------------------------------------
+    # TEST 2: Bedroom needs heating (below setpoint by threshold)
+    # -------------------------------------------------------------------------
+    - service: input_text.set_value
+      target:
+        entity_id: input_text.test_current_name
+      data:
+        value: "2: Bedroom needs heating"
+
+    # Bedroom at 62°F (setpoint 65, deviation -3)
+    - service: input_number.set_value
+      target:
+        entity_id: input_number.test_bedroom_temperature
+      data:
+        value: 62
+
+    - delay:
+        milliseconds: 50
+
+    - if:
+        - condition: template
+          value_template: >
+            {{ states('sensor.test_bedroom_target_direction') == 'heat' and
+               states('sensor.test_bedroom_out_of_setpoint') == 'True' }}
+      then:
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_current_status
+          data:
+            value: "PASSED"
+        - service: input_number.set_value
+          target:
+            entity_id: input_number.test_passed_count
+          data:
+            value: "{{ states('input_number.test_passed_count') | int + 1 }}"
+      else:
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_current_status
+          data:
+            value: "FAILED - Got: {{ states('sensor.test_bedroom_target_direction') }}"
+        - service: input_number.set_value
+          target:
+            entity_id: input_number.test_failed_count
+          data:
+            value: "{{ states('input_number.test_failed_count') | int + 1 }}"
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_failed_list
+          data:
+            value: "{{ states('input_text.test_failed_list') }}2: Bedroom heating; "
+
+    - delay:
+        milliseconds: 50
+
+    # -------------------------------------------------------------------------
+    # TEST 3: Bedroom needs cooling (above setpoint by threshold)
+    # -------------------------------------------------------------------------
+    - service: input_text.set_value
+      target:
+        entity_id: input_text.test_current_name
+      data:
+        value: "3: Bedroom needs cooling"
+
+    # Bedroom at 68°F (setpoint 65, deviation +3)
+    - service: input_number.set_value
+      target:
+        entity_id: input_number.test_bedroom_temperature
+      data:
+        value: 68
+
+    - delay:
+        milliseconds: 50
+
+    - if:
+        - condition: template
+          value_template: >
+            {{ states('sensor.test_bedroom_target_direction') == 'cool' and
+               states('sensor.test_bedroom_out_of_setpoint') == 'True' }}
+      then:
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_current_status
+          data:
+            value: "PASSED"
+        - service: input_number.set_value
+          target:
+            entity_id: input_number.test_passed_count
+          data:
+            value: "{{ states('input_number.test_passed_count') | int + 1 }}"
+      else:
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_current_status
+          data:
+            value: "FAILED - Got: {{ states('sensor.test_bedroom_target_direction') }}"
+        - service: input_number.set_value
+          target:
+            entity_id: input_number.test_failed_count
+          data:
+            value: "{{ states('input_number.test_failed_count') | int + 1 }}"
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_failed_list
+          data:
+            value: "{{ states('input_text.test_failed_list') }}3: Bedroom cooling; "
+
+    - delay:
+        milliseconds: 50
+
+    # -------------------------------------------------------------------------
+    # TEST 4: Office needs cooling during daytime
+    # -------------------------------------------------------------------------
+    - service: input_text.set_value
+      target:
+        entity_id: input_text.test_current_name
+      data:
+        value: "4: Office cooling (daytime)"
+
+    # Reset bedroom, set office hot
+    - service: input_number.set_value
+      target:
+        entity_id: input_number.test_bedroom_temperature
+      data:
+        value: 65
+
+    - service: input_number.set_value
+      target:
+        entity_id: input_number.test_office_temperature
+      data:
+        value: 72
+
+    - delay:
+        milliseconds: 50
+
+    - if:
+        - condition: template
+          value_template: >
+            {{ states('sensor.test_office_target_direction') == 'cool' }}
+      then:
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_current_status
+          data:
+            value: "PASSED"
+        - service: input_number.set_value
+          target:
+            entity_id: input_number.test_passed_count
+          data:
+            value: "{{ states('input_number.test_passed_count') | int + 1 }}"
+      else:
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_current_status
+          data:
+            value: "FAILED - Got: {{ states('sensor.test_office_target_direction') }}"
+        - service: input_number.set_value
+          target:
+            entity_id: input_number.test_failed_count
+          data:
+            value: "{{ states('input_number.test_failed_count') | int + 1 }}"
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_failed_list
+          data:
+            value: "{{ states('input_text.test_failed_list') }}4: Office daytime cooling; "
+
+    - delay:
+        milliseconds: 50
+
+    # -------------------------------------------------------------------------
+    # TEST 5: Night mode - Office at +4°F should NOT qualify (threshold is 5°F)
+    # -------------------------------------------------------------------------
+    - service: input_text.set_value
+      target:
+        entity_id: input_text.test_current_name
+      data:
+        value: "5: Night mode - Office +4F no qualify"
+
+    # Set night time (11 PM)
+    - service: input_datetime.set_datetime
+      target:
+        entity_id: input_datetime.test_simulated_time
+      data:
+        time: "23:00:00"
+
+    # Office at 72°F (setpoint 68, deviation +4, but night threshold is 5)
+    - service: input_number.set_value
+      target:
+        entity_id: input_number.test_office_temperature
+      data:
+        value: 72
+
+    - delay:
+        milliseconds: 50
+
+    - if:
+        - condition: template
+          value_template: >
+            {{ states('sensor.test_office_target_direction') == 'none' and
+               states('sensor.test_office_out_of_setpoint') == 'False' }}
+      then:
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_current_status
+          data:
+            value: "PASSED"
+        - service: input_number.set_value
+          target:
+            entity_id: input_number.test_passed_count
+          data:
+            value: "{{ states('input_number.test_passed_count') | int + 1 }}"
+      else:
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_current_status
+          data:
+            value: "FAILED - direction: {{ states('sensor.test_office_target_direction') }}, out: {{ states('sensor.test_office_out_of_setpoint') }}"
+        - service: input_number.set_value
+          target:
+            entity_id: input_number.test_failed_count
+          data:
+            value: "{{ states('input_number.test_failed_count') | int + 1 }}"
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_failed_list
+          data:
+            value: "{{ states('input_text.test_failed_list') }}5: Night office +4F; "
+
+    - delay:
+        milliseconds: 50
+
+    # -------------------------------------------------------------------------
+    # TEST 6: Night mode - Office at +6°F SHOULD qualify (above 5°F threshold)
+    # -------------------------------------------------------------------------
+    - service: input_text.set_value
+      target:
+        entity_id: input_text.test_current_name
+      data:
+        value: "6: Night mode - Office +6F qualifies"
+
+    # Office at 74°F (setpoint 68, deviation +6, above night threshold 5)
+    - service: input_number.set_value
+      target:
+        entity_id: input_number.test_office_temperature
+      data:
+        value: 74
+
+    - delay:
+        milliseconds: 50
+
+    - if:
+        - condition: template
+          value_template: >
+            {{ states('sensor.test_office_target_direction') == 'cool' and
+               states('sensor.test_office_out_of_setpoint') == 'True' }}
+      then:
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_current_status
+          data:
+            value: "PASSED"
+        - service: input_number.set_value
+          target:
+            entity_id: input_number.test_passed_count
+          data:
+            value: "{{ states('input_number.test_passed_count') | int + 1 }}"
+      else:
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_current_status
+          data:
+            value: "FAILED - direction: {{ states('sensor.test_office_target_direction') }}"
+        - service: input_number.set_value
+          target:
+            entity_id: input_number.test_failed_count
+          data:
+            value: "{{ states('input_number.test_failed_count') | int + 1 }}"
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_failed_list
+          data:
+            value: "{{ states('input_text.test_failed_list') }}6: Night office +6F; "
+
+    - delay:
+        milliseconds: 50
+
+    # -------------------------------------------------------------------------
+    # TEST 7: Night mode - Bedroom still uses 2°F threshold
+    # -------------------------------------------------------------------------
+    - service: input_text.set_value
+      target:
+        entity_id: input_text.test_current_name
+      data:
+        value: "7: Night mode - Bedroom 2F threshold"
+
+    # Bedroom at 62°F (setpoint 65, deviation -3, should still qualify at night)
+    - service: input_number.set_value
+      target:
+        entity_id: input_number.test_bedroom_temperature
+      data:
+        value: 62
+
+    - delay:
+        milliseconds: 50
+
+    - if:
+        - condition: template
+          value_template: >
+            {{ states('sensor.test_bedroom_target_direction') == 'heat' and
+               states('sensor.test_bedroom_out_of_setpoint') == 'True' }}
+      then:
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_current_status
+          data:
+            value: "PASSED"
+        - service: input_number.set_value
+          target:
+            entity_id: input_number.test_passed_count
+          data:
+            value: "{{ states('input_number.test_passed_count') | int + 1 }}"
+      else:
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_current_status
+          data:
+            value: "FAILED"
+        - service: input_number.set_value
+          target:
+            entity_id: input_number.test_failed_count
+          data:
+            value: "{{ states('input_number.test_failed_count') | int + 1 }}"
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_failed_list
+          data:
+            value: "{{ states('input_text.test_failed_list') }}7: Night bedroom 2F; "
+
+    - delay:
+        milliseconds: 50
+
+    # -------------------------------------------------------------------------
+    # TEST 8: Deviation just below threshold - should NOT qualify
+    # -------------------------------------------------------------------------
+    - service: input_text.set_value
+      target:
+        entity_id: input_text.test_current_name
+      data:
+        value: "8: Below threshold - no qualify"
+
+    # Reset to day mode
+    - service: input_datetime.set_datetime
+      target:
+        entity_id: input_datetime.test_simulated_time
+      data:
+        time: "12:00:00"
+
+    # Bedroom at 63.5°F (setpoint 65, deviation -1.5, below 2°F threshold)
+    - service: input_number.set_value
+      target:
+        entity_id: input_number.test_bedroom_temperature
+      data:
+        value: 63.5
+
+    - service: input_number.set_value
+      target:
+        entity_id: input_number.test_office_temperature
+      data:
+        value: 68
+
+    - delay:
+        milliseconds: 50
+
+    - if:
+        - condition: template
+          value_template: >
+            {{ states('sensor.test_bedroom_target_direction') == 'none' and
+               states('sensor.test_bedroom_out_of_setpoint') == 'False' }}
+      then:
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_current_status
+          data:
+            value: "PASSED"
+        - service: input_number.set_value
+          target:
+            entity_id: input_number.test_passed_count
+          data:
+            value: "{{ states('input_number.test_passed_count') | int + 1 }}"
+      else:
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_current_status
+          data:
+            value: "FAILED - dev: {{ states('sensor.test_bedroom_deviation') }}, dir: {{ states('sensor.test_bedroom_target_direction') }}"
+        - service: input_number.set_value
+          target:
+            entity_id: input_number.test_failed_count
+          data:
+            value: "{{ states('input_number.test_failed_count') | int + 1 }}"
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_failed_list
+          data:
+            value: "{{ states('input_text.test_failed_list') }}8: Below threshold; "
+
+    - delay:
+        milliseconds: 50
+
+    # -------------------------------------------------------------------------
+    # TEST 9: Deviation exactly at threshold - should qualify
+    # -------------------------------------------------------------------------
+    - service: input_text.set_value
+      target:
+        entity_id: input_text.test_current_name
+      data:
+        value: "9: Exactly at threshold - qualifies"
+
+    # Bedroom at 63°F (setpoint 65, deviation -2, exactly at threshold)
+    - service: input_number.set_value
+      target:
+        entity_id: input_number.test_bedroom_temperature
+      data:
+        value: 63
+
+    - delay:
+        milliseconds: 50
+
+    - if:
+        - condition: template
+          value_template: >
+            {{ states('sensor.test_bedroom_target_direction') == 'heat' and
+               states('sensor.test_bedroom_out_of_setpoint') == 'True' }}
+      then:
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_current_status
+          data:
+            value: "PASSED"
+        - service: input_number.set_value
+          target:
+            entity_id: input_number.test_passed_count
+          data:
+            value: "{{ states('input_number.test_passed_count') | int + 1 }}"
+      else:
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_current_status
+          data:
+            value: "FAILED - dev: {{ states('sensor.test_bedroom_deviation') }}, dir: {{ states('sensor.test_bedroom_target_direction') }}"
+        - service: input_number.set_value
+          target:
+            entity_id: input_number.test_failed_count
+          data:
+            value: "{{ states('input_number.test_failed_count') | int + 1 }}"
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_failed_list
+          data:
+            value: "{{ states('input_text.test_failed_list') }}9: At threshold; "
+
+    - delay:
+        milliseconds: 50
+
+    # -------------------------------------------------------------------------
+    # TEST 10: Multiple rooms need same direction - all should show it
+    # -------------------------------------------------------------------------
+    - service: input_text.set_value
+      target:
+        entity_id: input_text.test_current_name
+      data:
+        value: "10: Multiple rooms need cooling"
+
+    # All rooms too hot
+    - service: input_number.set_value
+      target:
+        entity_id: input_number.test_bedroom_temperature
+      data:
+        value: 70
+
+    - service: input_number.set_value
+      target:
+        entity_id: input_number.test_office_temperature
+      data:
+        value: 73
+
+    - service: input_number.set_value
+      target:
+        entity_id: input_number.test_living_room_temperature
+      data:
+        value: 72
+
+    - service: input_number.set_value
+      target:
+        entity_id: input_number.test_first_floor_temperature
+      data:
+        value: 71
+
+    - delay:
+        milliseconds: 50
+
+    - if:
+        - condition: template
+          value_template: >
+            {{ states('sensor.test_bedroom_target_direction') == 'cool' and
+               states('sensor.test_office_target_direction') == 'cool' and
+               states('sensor.test_living_room_target_direction') == 'cool' and
+               states('sensor.test_first_floor_target_direction') == 'cool' }}
+      then:
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_current_status
+          data:
+            value: "PASSED"
+        - service: input_number.set_value
+          target:
+            entity_id: input_number.test_passed_count
+          data:
+            value: "{{ states('input_number.test_passed_count') | int + 1 }}"
+      else:
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_current_status
+          data:
+            value: "FAILED"
+        - service: input_number.set_value
+          target:
+            entity_id: input_number.test_failed_count
+          data:
+            value: "{{ states('input_number.test_failed_count') | int + 1 }}"
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_failed_list
+          data:
+            value: "{{ states('input_text.test_failed_list') }}10: Multi-room cooling; "
+
+    - delay:
+        milliseconds: 50
+
+    # -------------------------------------------------------------------------
+    # TEST 11: Conflicting room needs - verify directions are independent
+    # -------------------------------------------------------------------------
+    - service: input_text.set_value
+      target:
+        entity_id: input_text.test_current_name
+      data:
+        value: "11: Conflicting room needs"
+
+    # Bedroom cold, office hot
+    - service: input_number.set_value
+      target:
+        entity_id: input_number.test_bedroom_temperature
+      data:
+        value: 62
+
+    - service: input_number.set_value
+      target:
+        entity_id: input_number.test_office_temperature
+      data:
+        value: 73
+
+    - service: input_number.set_value
+      target:
+        entity_id: input_number.test_living_room_temperature
+      data:
+        value: 68
+
+    - service: input_number.set_value
+      target:
+        entity_id: input_number.test_first_floor_temperature
+      data:
+        value: 68
+
+    - delay:
+        milliseconds: 50
+
+    - if:
+        - condition: template
+          value_template: >
+            {{ states('sensor.test_bedroom_target_direction') == 'heat' and
+               states('sensor.test_office_target_direction') == 'cool' and
+               states('sensor.test_living_room_target_direction') == 'none' and
+               states('sensor.test_first_floor_target_direction') == 'none' }}
+      then:
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_current_status
+          data:
+            value: "PASSED"
+        - service: input_number.set_value
+          target:
+            entity_id: input_number.test_passed_count
+          data:
+            value: "{{ states('input_number.test_passed_count') | int + 1 }}"
+      else:
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_current_status
+          data:
+            value: "FAILED - bed: {{ states('sensor.test_bedroom_target_direction') }}, off: {{ states('sensor.test_office_target_direction') }}"
+        - service: input_number.set_value
+          target:
+            entity_id: input_number.test_failed_count
+          data:
+            value: "{{ states('input_number.test_failed_count') | int + 1 }}"
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_failed_list
+          data:
+            value: "{{ states('input_text.test_failed_list') }}11: Conflicting needs; "
+
+    - delay:
+        milliseconds: 50
+
+    # -------------------------------------------------------------------------
+    # TEST 12: First floor heating
+    # -------------------------------------------------------------------------
+    - service: input_text.set_value
+      target:
+        entity_id: input_text.test_current_name
+      data:
+        value: "12: First floor heating"
+
+    # Reset others, first floor cold
+    - service: input_number.set_value
+      target:
+        entity_id: input_number.test_bedroom_temperature
+      data:
+        value: 65
+
+    - service: input_number.set_value
+      target:
+        entity_id: input_number.test_office_temperature
+      data:
+        value: 68
+
+    - service: input_number.set_value
+      target:
+        entity_id: input_number.test_first_floor_temperature
+      data:
+        value: 63
+
+    - delay:
+        milliseconds: 50
+
+    - if:
+        - condition: template
+          value_template: >
+            {{ states('sensor.test_first_floor_target_direction') == 'heat' }}
+      then:
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_current_status
+          data:
+            value: "PASSED"
+        - service: input_number.set_value
+          target:
+            entity_id: input_number.test_passed_count
+          data:
+            value: "{{ states('input_number.test_passed_count') | int + 1 }}"
+      else:
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_current_status
+          data:
+            value: "FAILED - Got: {{ states('sensor.test_first_floor_target_direction') }}"
+        - service: input_number.set_value
+          target:
+            entity_id: input_number.test_failed_count
+          data:
+            value: "{{ states('input_number.test_failed_count') | int + 1 }}"
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_failed_list
+          data:
+            value: "{{ states('input_text.test_failed_list') }}12: First floor heat; "
+
+    - delay:
+        milliseconds: 50
+
+    # -------------------------------------------------------------------------
+    # TEST 13: Fan speed HIGH (deviation > 3°F)
+    # -------------------------------------------------------------------------
+    - service: input_text.set_value
+      target:
+        entity_id: input_text.test_current_name
+      data:
+        value: "13: Fan speed HIGH (>3F deviation)"
+
+    # Set condenser to cool mode for this test
+    - service: input_text.set_value
+      target:
+        entity_id: input_text.condenser_mode_request
+      data:
+        value: "cool"
+
+    # Bedroom at 69°F (setpoint 65, deviation +4, needs cooling, should be HIGH)
+    - service: input_number.set_value
+      target:
+        entity_id: input_number.test_bedroom_temperature
+      data:
+        value: 69
+
+    - delay:
+        milliseconds: 50
+
+    - if:
+        - condition: template
+          value_template: >
+            {{ states('sensor.test_bedroom_fan_speed') == 'high' }}
+      then:
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_current_status
+          data:
+            value: "PASSED"
+        - service: input_number.set_value
+          target:
+            entity_id: input_number.test_passed_count
+          data:
+            value: "{{ states('input_number.test_passed_count') | int + 1 }}"
+      else:
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_current_status
+          data:
+            value: "FAILED - Got: {{ states('sensor.test_bedroom_fan_speed') }}, dev: {{ states('sensor.test_bedroom_deviation') }}"
+        - service: input_number.set_value
+          target:
+            entity_id: input_number.test_failed_count
+          data:
+            value: "{{ states('input_number.test_failed_count') | int + 1 }}"
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_failed_list
+          data:
+            value: "{{ states('input_text.test_failed_list') }}13: Fan HIGH; "
+
+    - delay:
+        milliseconds: 50
+
+    # -------------------------------------------------------------------------
+    # TEST 14: Fan speed MEDIUM (deviation > 1.5°F, <= 3°F)
+    # -------------------------------------------------------------------------
+    - service: input_text.set_value
+      target:
+        entity_id: input_text.test_current_name
+      data:
+        value: "14: Fan speed MEDIUM (1.5-3F deviation)"
+
+    # Bedroom at 67.5°F (setpoint 65, deviation +2.5, should be MEDIUM)
+    - service: input_number.set_value
+      target:
+        entity_id: input_number.test_bedroom_temperature
+      data:
+        value: 67.5
+
+    - delay:
+        milliseconds: 50
+
+    - if:
+        - condition: template
+          value_template: >
+            {{ states('sensor.test_bedroom_fan_speed') == 'medium' }}
+      then:
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_current_status
+          data:
+            value: "PASSED"
+        - service: input_number.set_value
+          target:
+            entity_id: input_number.test_passed_count
+          data:
+            value: "{{ states('input_number.test_passed_count') | int + 1 }}"
+      else:
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_current_status
+          data:
+            value: "FAILED - Got: {{ states('sensor.test_bedroom_fan_speed') }}, dev: {{ states('sensor.test_bedroom_deviation') }}"
+        - service: input_number.set_value
+          target:
+            entity_id: input_number.test_failed_count
+          data:
+            value: "{{ states('input_number.test_failed_count') | int + 1 }}"
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_failed_list
+          data:
+            value: "{{ states('input_text.test_failed_list') }}14: Fan MEDIUM; "
+
+    - delay:
+        milliseconds: 50
+
+    # -------------------------------------------------------------------------
+    # TEST 15: Fan speed LOW (deviation > 0.5°F, <= 1.5°F)
+    # -------------------------------------------------------------------------
+    - service: input_text.set_value
+      target:
+        entity_id: input_text.test_current_name
+      data:
+        value: "15: Fan speed LOW (0.5-1.5F deviation)"
+
+    # Set condenser to heat mode for this test
+    - service: input_text.set_value
+      target:
+        entity_id: input_text.condenser_mode_request
+      data:
+        value: "heat"
+
+    # Bedroom at 63°F (setpoint 65, deviation -2, needs heating)
+    # But for fan speed test we need deviation between 0.5 and 1.5 while still needing conditioning
+    # Actually the fan speed is based on absolute deviation, not need
+    # Let's set bedroom at 63.8°F (deviation -1.2) but since threshold is 2, it doesn't need conditioning
+    # So let's use a room that needs conditioning: bedroom at 62°F (dev -3) for heat mode
+    # Actually, re-reading the logic: fan speed is only calculated if room needs conditioning
+    # If room needs heat: dev <= -threshold (-2), so bedroom at 63.9 (dev -1.1) won't need heat
+    # So for LOW fan test with heat mode: need dev <= -2 AND 0.5 < |dev| <= 1.5
+    # That's impossible since if dev <= -2, |dev| >= 2
+    # The LOW fan speed only applies when |dev| is between 0.5 and 1.5 AND room needs conditioning
+    # With threshold of 2, that can't happen
+    # Looking at the original head_units.yaml: it checks bedroom_needs first (threshold-based)
+    # Then if needs, it applies fan speed based on deviation magnitude
+    # So if threshold is 2, you can only "need" conditioning when |dev| >= 2
+    # Therefore LOW can only happen when 2 <= |dev| <= 1.5 which is never true!
+    # Wait, re-reading: low is for 0.5 < |dev| <= 1.5, but you can only need when |dev| >= 2
+    # So the LOW state for "needing" rooms is actually impossible with default threshold
+    # LOW only happens for rooms NOT needing conditioning (circulation mode)
+
+    # Let me verify: if bedroom_needs is false, fan = low (circulation)
+    # if bedroom_needs is true and |dev| > 3: high
+    # if bedroom_needs is true and |dev| > 1.5: medium
+    # if bedroom_needs is true and |dev| > 0.5: low
+    # if bedroom_needs is true and |dev| <= 0.5: auto
+
+    # So with threshold=2, if needs=true, |dev| >= 2, so we can hit:
+    # - high (|dev| > 3, e.g., dev=3.5)
+    # - medium (1.5 < |dev| <= 3, e.g., dev=2.5)
+    # But NOT low (0.5 < |dev| <= 1.5) or auto (|dev| <= 0.5) when needing
+
+    # For this test, let's test the circulation case: room NOT needing conditioning = LOW
+    # Bedroom at 65°F (at setpoint, no need) should be LOW for circulation
+    - service: input_number.set_value
+      target:
+        entity_id: input_number.test_bedroom_temperature
+      data:
+        value: 65
+
+    - delay:
+        milliseconds: 50
+
+    - if:
+        - condition: template
+          value_template: >
+            {{ states('sensor.test_bedroom_fan_speed') == 'low' }}
+      then:
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_current_status
+          data:
+            value: "PASSED"
+        - service: input_number.set_value
+          target:
+            entity_id: input_number.test_passed_count
+          data:
+            value: "{{ states('input_number.test_passed_count') | int + 1 }}"
+      else:
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_current_status
+          data:
+            value: "FAILED - Got: {{ states('sensor.test_bedroom_fan_speed') }}"
+        - service: input_number.set_value
+          target:
+            entity_id: input_number.test_failed_count
+          data:
+            value: "{{ states('input_number.test_failed_count') | int + 1 }}"
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_failed_list
+          data:
+            value: "{{ states('input_text.test_failed_list') }}15: Fan LOW circulation; "
+
+    - delay:
+        milliseconds: 50
+
+    # -------------------------------------------------------------------------
+    # TEST 16: Fan speed LOW for non-conditioning room (opposite mode)
+    # -------------------------------------------------------------------------
+    - service: input_text.set_value
+      target:
+        entity_id: input_text.test_current_name
+      data:
+        value: "16: Fan LOW - room needs opposite mode"
+
+    # Condenser in heat mode, but bedroom is HOT (needs cool, not heat)
+    # So bedroom should NOT get active conditioning, just circulation (LOW)
+    - service: input_number.set_value
+      target:
+        entity_id: input_number.test_bedroom_temperature
+      data:
+        value: 70
+
+    - delay:
+        milliseconds: 50
+
+    - if:
+        - condition: template
+          value_template: >
+            {{ states('sensor.test_bedroom_fan_speed') == 'low' }}
+      then:
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_current_status
+          data:
+            value: "PASSED"
+        - service: input_number.set_value
+          target:
+            entity_id: input_number.test_passed_count
+          data:
+            value: "{{ states('input_number.test_passed_count') | int + 1 }}"
+      else:
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_current_status
+          data:
+            value: "FAILED - Got: {{ states('sensor.test_bedroom_fan_speed') }}, mode: heat, dev: {{ states('sensor.test_bedroom_deviation') }}"
+        - service: input_number.set_value
+          target:
+            entity_id: input_number.test_failed_count
+          data:
+            value: "{{ states('input_number.test_failed_count') | int + 1 }}"
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_failed_list
+          data:
+            value: "{{ states('input_text.test_failed_list') }}16: Fan LOW opposite; "
+
+    - delay:
+        milliseconds: 50
+
+    # -------------------------------------------------------------------------
+    # TEST 17: Fan speed HIGH for heating (deviation < -3°F)
+    # -------------------------------------------------------------------------
+    - service: input_text.set_value
+      target:
+        entity_id: input_text.test_current_name
+      data:
+        value: "17: Fan HIGH for heating"
+
+    # Bedroom at 60°F (setpoint 65, deviation -5, needs heat, should be HIGH)
+    - service: input_number.set_value
+      target:
+        entity_id: input_number.test_bedroom_temperature
+      data:
+        value: 60
+
+    - delay:
+        milliseconds: 50
+
+    - if:
+        - condition: template
+          value_template: >
+            {{ states('sensor.test_bedroom_fan_speed') == 'high' }}
+      then:
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_current_status
+          data:
+            value: "PASSED"
+        - service: input_number.set_value
+          target:
+            entity_id: input_number.test_passed_count
+          data:
+            value: "{{ states('input_number.test_passed_count') | int + 1 }}"
+      else:
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_current_status
+          data:
+            value: "FAILED - Got: {{ states('sensor.test_bedroom_fan_speed') }}"
+        - service: input_number.set_value
+          target:
+            entity_id: input_number.test_failed_count
+          data:
+            value: "{{ states('input_number.test_failed_count') | int + 1 }}"
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_failed_list
+          data:
+            value: "{{ states('input_text.test_failed_list') }}17: Fan HIGH heat; "
+
+    - delay:
+        milliseconds: 50
+
+    # -------------------------------------------------------------------------
+    # TEST 18: Fan speed MEDIUM for heating (deviation between -1.5 and -3°F)
+    # -------------------------------------------------------------------------
+    - service: input_text.set_value
+      target:
+        entity_id: input_text.test_current_name
+      data:
+        value: "18: Fan MEDIUM for heating"
+
+    # Bedroom at 62.5°F (setpoint 65, deviation -2.5, needs heat, should be MEDIUM)
+    - service: input_number.set_value
+      target:
+        entity_id: input_number.test_bedroom_temperature
+      data:
+        value: 62.5
+
+    - delay:
+        milliseconds: 50
+
+    - if:
+        - condition: template
+          value_template: >
+            {{ states('sensor.test_bedroom_fan_speed') == 'medium' }}
+      then:
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_current_status
+          data:
+            value: "PASSED"
+        - service: input_number.set_value
+          target:
+            entity_id: input_number.test_passed_count
+          data:
+            value: "{{ states('input_number.test_passed_count') | int + 1 }}"
+      else:
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_current_status
+          data:
+            value: "FAILED - Got: {{ states('sensor.test_bedroom_fan_speed') }}, dev: {{ states('sensor.test_bedroom_deviation') }}"
+        - service: input_number.set_value
+          target:
+            entity_id: input_number.test_failed_count
+          data:
+            value: "{{ states('input_number.test_failed_count') | int + 1 }}"
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_failed_list
+          data:
+            value: "{{ states('input_text.test_failed_list') }}18: Fan MEDIUM heat; "
+
+    - delay:
+        milliseconds: 50
+
+    # -------------------------------------------------------------------------
+    # TEST 19: First floor fan HIGH when being conditioned (600 sq ft override)
+    # -------------------------------------------------------------------------
+    - service: input_text.set_value
+      target:
+        entity_id: input_text.test_current_name
+      data:
+        value: "19: First floor fan HIGH when conditioned"
+
+    # Set condenser to heat mode
+    - service: input_text.set_value
+      target:
+        entity_id: input_text.condenser_mode_request
+      data:
+        value: "heat"
+
+    # First floor at 65.5°F (setpoint 68, deviation -2.5°F)
+    # Other rooms would be MEDIUM at this deviation, but first floor is always HIGH
+    - service: input_number.set_value
+      target:
+        entity_id: input_number.test_first_floor_temperature
+      data:
+        value: 65.5
+
+    - delay:
+        milliseconds: 50
+
+    - if:
+        - condition: template
+          value_template: >
+            {{ states('sensor.test_first_floor_fan_speed') == 'high' }}
+      then:
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_current_status
+          data:
+            value: "PASSED"
+        - service: input_number.set_value
+          target:
+            entity_id: input_number.test_passed_count
+          data:
+            value: "{{ states('input_number.test_passed_count') | int + 1 }}"
+      else:
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_current_status
+          data:
+            value: "FAILED - Got: {{ states('sensor.test_first_floor_fan_speed') }}"
+        - service: input_number.set_value
+          target:
+            entity_id: input_number.test_failed_count
+          data:
+            value: "{{ states('input_number.test_failed_count') | int + 1 }}"
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_failed_list
+          data:
+            value: "{{ states('input_text.test_failed_list') }}19: First floor fan priority; "
+
+    - delay:
+        milliseconds: 50
+
+    # -------------------------------------------------------------------------
+    # Finalize test run
+    # -------------------------------------------------------------------------
+    - service: input_number.set_value
+      target:
+        entity_id: input_number.test_total_count
+      data:
+        value: 19
+
+    - service: input_text.set_value
+      target:
+        entity_id: input_text.test_current_name
+      data:
+        value: "Complete"
+
+    - service: input_text.set_value
+      target:
+        entity_id: input_text.test_last_run_result
+      data:
+        value: >
+          {{ states('input_number.test_passed_count') | int }}/19 passed
+          {% if states('input_number.test_failed_count') | int > 0 %}
+          - FAILED: {{ states('input_text.test_failed_list') }}
+          {% endif %}
+
+    - service: input_boolean.turn_off
+      target:
+        entity_id: input_boolean.hvac_test_running
+
+    # Send notification with results
+    - service: persistent_notification.create
+      data:
+        title: "HVAC Logic Tests Complete"
+        message: >
+          Results: {{ states('input_number.test_passed_count') | int }}/19 tests passed
+
+          {% if states('input_number.test_failed_count') | int > 0 %}
+          Failed tests: {{ states('input_text.test_failed_list') }}
+          {% else %}
+          All tests passed!
+          {% endif %}
+        notification_id: hvac_test_results
+
+    # Turn off test mode
+    - service: input_boolean.turn_off
+      target:
+        entity_id: input_boolean.hvac_test_mode
