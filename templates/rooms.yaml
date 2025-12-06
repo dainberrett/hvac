@@ -157,7 +157,8 @@ sensor:
   # - Defaults to 0 if either sensor is unavailable
   # ==========================================================
 
-  - name: bedroom_sensor_offset
+  # Raw offsets for dashboard display (shows tenths)
+  - name: bedroom_sensor_offset_raw
     unit_of_measurement: "°F"
     state: >
       {% set mitsu = state_attr('climate.bedroom_air', 'current_temperature') %}
@@ -165,11 +166,10 @@ sensor:
       {% if mitsu is none or sonoff in ['unknown', 'unavailable'] %}
         0
       {% else %}
-        {% set raw_offset = (mitsu | float) - (sonoff | float) %}
-        {{ [[raw_offset | round(0) | int, -8] | max, 8] | min }}
+        {{ ((mitsu | float) - (sonoff | float)) | round(1) }}
       {% endif %}
 
-  - name: office_sensor_offset
+  - name: office_sensor_offset_raw
     unit_of_measurement: "°F"
     state: >
       {% set mitsu = state_attr('climate.office_air', 'current_temperature') %}
@@ -177,11 +177,10 @@ sensor:
       {% if mitsu is none or sonoff in ['unknown', 'unavailable'] %}
         0
       {% else %}
-        {% set raw_offset = (mitsu | float) - (sonoff | float) %}
-        {{ [[raw_offset | round(0) | int, -8] | max, 8] | min }}
+        {{ ((mitsu | float) - (sonoff | float)) | round(1) }}
       {% endif %}
 
-  - name: living_room_sensor_offset
+  - name: living_room_sensor_offset_raw
     unit_of_measurement: "°F"
     state: >
       {% set mitsu = state_attr('climate.living_room_air', 'current_temperature') %}
@@ -189,11 +188,10 @@ sensor:
       {% if mitsu is none or sonoff in ['unknown', 'unavailable'] %}
         0
       {% else %}
-        {% set raw_offset = (mitsu | float) - (sonoff | float) %}
-        {{ [[raw_offset | round(0) | int, -8] | max, 8] | min }}
+        {{ ((mitsu | float) - (sonoff | float)) | round(1) }}
       {% endif %}
 
-  - name: first_floor_sensor_offset
+  - name: first_floor_sensor_offset_raw
     unit_of_measurement: "°F"
     state: >
       {% set mitsu = state_attr('climate.shop_air', 'current_temperature') %}
@@ -201,6 +199,30 @@ sensor:
       {% if mitsu is none or sonoff in ['unknown', 'unavailable'] %}
         0
       {% else %}
-        {% set raw_offset = (mitsu | float) - (sonoff | float) %}
-        {{ [[raw_offset | round(0) | int, -8] | max, 8] | min }}
+        {{ ((mitsu | float) - (sonoff | float)) | round(1) }}
       {% endif %}
+
+  # Rounded offsets for automation use (capped at ±8°F)
+  - name: bedroom_sensor_offset
+    unit_of_measurement: "°F"
+    state: >
+      {% set raw = states('sensor.bedroom_sensor_offset_raw') | float(0) %}
+      {{ [[raw | round(0) | int, -8] | max, 8] | min }}
+
+  - name: office_sensor_offset
+    unit_of_measurement: "°F"
+    state: >
+      {% set raw = states('sensor.office_sensor_offset_raw') | float(0) %}
+      {{ [[raw | round(0) | int, -8] | max, 8] | min }}
+
+  - name: living_room_sensor_offset
+    unit_of_measurement: "°F"
+    state: >
+      {% set raw = states('sensor.living_room_sensor_offset_raw') | float(0) %}
+      {{ [[raw | round(0) | int, -8] | max, 8] | min }}
+
+  - name: first_floor_sensor_offset
+    unit_of_measurement: "°F"
+    state: >
+      {% set raw = states('sensor.first_floor_sensor_offset_raw') | float(0) %}
+      {{ [[raw | round(0) | int, -8] | max, 8] | min }}
