@@ -33,9 +33,13 @@
     living_sp: "{{ states('input_number.living_room_setpoint') | float | round(0) | int }}"
     first_sp: "{{ states('input_number.first_floor_setpoint') | float | round(0) | int }}"
 
-    # First floor sensor offset - compensates for Mitsubishi's built-in sensor
-    # reading warmer than actual room temp (sensor is near ceiling/unit)
-    first_floor_offset: "{{ states('input_number.first_floor_temp_offset') | float(3) }}"
+    # Dynamic sensor offsets - compensates for difference between Mitsubishi's
+    # built-in sensor and the authoritative Sonoff sensor in each room.
+    # These are calculated automatically by template sensors.
+    bedroom_offset: "{{ states('sensor.bedroom_sensor_offset') | int(0) }}"
+    office_offset: "{{ states('sensor.office_sensor_offset') | int(0) }}"
+    living_offset: "{{ states('sensor.living_room_sensor_offset') | int(0) }}"
+    first_floor_offset: "{{ states('sensor.first_floor_sensor_offset') | int(0) }}"
 
     # Room deviations (from template sensors)
     bedroom_dev: "{{ states('sensor.bedroom_temperature_deviation') | float }}"
@@ -49,13 +53,34 @@
     living_needs: "{{ (mode == 'heat' and living_dev <= -threshold) or (mode == 'cool' and living_dev >= threshold) }}"
     first_needs: "{{ (mode == 'heat' and first_dev <= -threshold) or (mode == 'cool' and first_dev >= threshold) }}"
 
-    # Target temperatures
-    bedroom_target: "{{ bedroom_sp if bedroom_needs else neutral_temp }}"
-    office_target: "{{ office_sp if office_needs else neutral_temp }}"
-    living_target: "{{ living_sp if living_needs else neutral_temp }}"
-    # First floor: apply offset to compensate for Mitsubishi sensor placement
+    # Target temperatures with dynamic offset compensation
     # Heat mode: tell unit to heat higher (sp + offset) so it runs longer
     # Cool mode: tell unit to cool lower (sp - offset) so it runs longer
+    # This compensates for the difference between the Mitsubishi sensor and Sonoff
+    bedroom_target: >
+      {% if not bedroom_needs %}
+        {{ neutral_temp }}
+      {% elif mode == 'heat' %}
+        {{ bedroom_sp + bedroom_offset }}
+      {% else %}
+        {{ bedroom_sp - bedroom_offset }}
+      {% endif %}
+    office_target: >
+      {% if not office_needs %}
+        {{ neutral_temp }}
+      {% elif mode == 'heat' %}
+        {{ office_sp + office_offset }}
+      {% else %}
+        {{ office_sp - office_offset }}
+      {% endif %}
+    living_target: >
+      {% if not living_needs %}
+        {{ neutral_temp }}
+      {% elif mode == 'heat' %}
+        {{ living_sp + living_offset }}
+      {% else %}
+        {{ living_sp - living_offset }}
+      {% endif %}
     first_target: >
       {% if not first_needs %}
         {{ neutral_temp }}

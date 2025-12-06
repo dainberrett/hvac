@@ -30,9 +30,26 @@ Lower number = higher priority.
 | `input_number.deviation_delay_minutes` | 5 | 60 | 20 | min |
 | `input_number.minimum_runtime_minutes` | 15 | 120 | 45 | min |
 | `input_number.night_non_priority_threshold` | 2 | 10 | 5 | °F |
-| `input_number.first_floor_temp_offset` | 0 | 10 | 3 | °F |
 
-Note: `first_floor_temp_offset` compensates for the Mitsubishi unit's built-in sensor reading warmer than the actual room temperature (sensor is near ceiling). When heating, the target sent to the unit is increased by this offset; when cooling, it's decreased.
+### Dynamic Sensor Offset Template Sensors
+
+These sensors are calculated automatically and do not require manual configuration:
+
+| Entity ID | Description |
+|-----------|-------------|
+| `sensor.bedroom_sensor_offset` | Difference between Sensibo and Sonoff readings for bedroom |
+| `sensor.office_sensor_offset` | Difference between Sensibo and Sonoff readings for office |
+| `sensor.living_room_sensor_offset` | Difference between Sensibo and Sonoff readings for living room |
+| `sensor.first_floor_sensor_offset` | Difference between Sensibo and Sonoff readings for first floor |
+
+**How it works:** Each offset is calculated as `Mitsubishi_reading - Sonoff_reading`. When sending setpoints to the head units:
+- **Heat mode:** setpoint + offset (if Mitsubishi reads high, tell it to heat higher)
+- **Cool mode:** setpoint - offset (if Mitsubishi reads high, tell it to cool lower)
+
+**Safeguards:**
+- Capped at ±8°F to prevent runaway values
+- Rounded to nearest 1°F (Mitsubishi only accepts whole degrees)
+- Defaults to 0 if either sensor is unavailable
 
 ### Input Datetimes
 
