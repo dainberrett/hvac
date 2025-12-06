@@ -203,26 +203,56 @@ sensor:
       {% endif %}
 
   # Rounded offsets for automation use (capped at ±8°F)
+  # Uses ceiling for positive values, floor for negative (always overshoot)
+  # Examples: 1.1 → 2, -1.1 → -2, 1.0 → 1, -1.0 → -1
   - name: bedroom_sensor_offset
     unit_of_measurement: "°F"
     state: >
       {% set raw = states('sensor.bedroom_sensor_offset_raw') | float(0) %}
-      {{ [[raw | round(0) | int, -8] | max, 8] | min }}
+      {% if raw > 0 %}
+        {% set rounded = (raw | round(0, 'ceil')) | int %}
+      {% elif raw < 0 %}
+        {% set rounded = (raw | round(0, 'floor')) | int %}
+      {% else %}
+        {% set rounded = 0 %}
+      {% endif %}
+      {{ [[rounded, -8] | max, 8] | min }}
 
   - name: office_sensor_offset
     unit_of_measurement: "°F"
     state: >
       {% set raw = states('sensor.office_sensor_offset_raw') | float(0) %}
-      {{ [[raw | round(0) | int, -8] | max, 8] | min }}
+      {% if raw > 0 %}
+        {% set rounded = (raw | round(0, 'ceil')) | int %}
+      {% elif raw < 0 %}
+        {% set rounded = (raw | round(0, 'floor')) | int %}
+      {% else %}
+        {% set rounded = 0 %}
+      {% endif %}
+      {{ [[rounded, -8] | max, 8] | min }}
 
   - name: living_room_sensor_offset
     unit_of_measurement: "°F"
     state: >
       {% set raw = states('sensor.living_room_sensor_offset_raw') | float(0) %}
-      {{ [[raw | round(0) | int, -8] | max, 8] | min }}
+      {% if raw > 0 %}
+        {% set rounded = (raw | round(0, 'ceil')) | int %}
+      {% elif raw < 0 %}
+        {% set rounded = (raw | round(0, 'floor')) | int %}
+      {% else %}
+        {% set rounded = 0 %}
+      {% endif %}
+      {{ [[rounded, -8] | max, 8] | min }}
 
   - name: first_floor_sensor_offset
     unit_of_measurement: "°F"
     state: >
       {% set raw = states('sensor.first_floor_sensor_offset_raw') | float(0) %}
-      {{ [[raw | round(0) | int, -8] | max, 8] | min }}
+      {% if raw > 0 %}
+        {% set rounded = (raw | round(0, 'ceil')) | int %}
+      {% elif raw < 0 %}
+        {% set rounded = (raw | round(0, 'floor')) | int %}
+      {% else %}
+        {% set rounded = 0 %}
+      {% endif %}
+      {{ [[rounded, -8] | max, 8] | min }}
