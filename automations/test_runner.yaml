@@ -1323,13 +1323,224 @@
         milliseconds: 50
 
     # -------------------------------------------------------------------------
+    # TEST 20: Continue cooling below threshold (oscillation prevention)
+    # -------------------------------------------------------------------------
+    # This is the exact scenario that caused the overnight oscillation bug:
+    # Room triggers cooling at threshold, drops below threshold but hasn't
+    # reached setpoint. Should CONTINUE cooling, not stop.
+    - service: input_text.set_value
+      target:
+        entity_id: input_text.test_current_name
+      data:
+        value: "20: Continue cooling below threshold"
+
+    # Set condenser to cool mode
+    - service: input_text.set_value
+      target:
+        entity_id: input_text.condenser_mode_request
+      data:
+        value: "cool"
+
+    # First, trigger the threshold by setting bedroom hot (+3°F)
+    - service: input_number.set_value
+      target:
+        entity_id: input_number.test_bedroom_temperature
+      data:
+        value: 68
+
+    - delay:
+        milliseconds: 50
+
+    # Verify out_of_setpoint is True (this is the memory that we triggered)
+    # Then drop below threshold but still above setpoint
+    - service: input_number.set_value
+      target:
+        entity_id: input_number.test_bedroom_temperature
+      data:
+        value: 66.5
+
+    - delay:
+        milliseconds: 50
+
+    # Bedroom at 66.5°F (setpoint 65, deviation +1.5, below 2°F threshold)
+    # But out_of_setpoint should still be True and room should still need cooling
+    - if:
+        - condition: template
+          value_template: >
+            {{ states('sensor.test_bedroom_out_of_setpoint') == 'True' and
+               states('sensor.test_bedroom_needs') == 'True' and
+               states('sensor.test_bedroom_target_direction') == 'cool' }}
+      then:
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_current_status
+          data:
+            value: "PASSED"
+        - service: input_number.set_value
+          target:
+            entity_id: input_number.test_passed_count
+          data:
+            value: "{{ states('input_number.test_passed_count') | int + 1 }}"
+      else:
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_current_status
+          data:
+            value: "FAILED - out: {{ states('sensor.test_bedroom_out_of_setpoint') }}, needs: {{ states('sensor.test_bedroom_needs') }}, dir: {{ states('sensor.test_bedroom_target_direction') }}"
+        - service: input_number.set_value
+          target:
+            entity_id: input_number.test_failed_count
+          data:
+            value: "{{ states('input_number.test_failed_count') | int + 1 }}"
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_failed_list
+          data:
+            value: "{{ states('input_text.test_failed_list') }}20: Continue below threshold; "
+
+    - delay:
+        milliseconds: 50
+
+    # -------------------------------------------------------------------------
+    # TEST 21: Stop cooling when setpoint reached (deviation = 0)
+    # -------------------------------------------------------------------------
+    - service: input_text.set_value
+      target:
+        entity_id: input_text.test_current_name
+      data:
+        value: "21: Stop at setpoint"
+
+    # Continue from test 20 - room was cooling, now reaches setpoint
+    - service: input_number.set_value
+      target:
+        entity_id: input_number.test_bedroom_temperature
+      data:
+        value: 65
+
+    - delay:
+        milliseconds: 50
+
+    # At setpoint (deviation = 0), should stop needing conditioning
+    - if:
+        - condition: template
+          value_template: >
+            {{ states('sensor.test_bedroom_out_of_setpoint') == 'False' and
+               states('sensor.test_bedroom_needs') == 'False' and
+               states('sensor.test_bedroom_target_direction') == 'none' }}
+      then:
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_current_status
+          data:
+            value: "PASSED"
+        - service: input_number.set_value
+          target:
+            entity_id: input_number.test_passed_count
+          data:
+            value: "{{ states('input_number.test_passed_count') | int + 1 }}"
+      else:
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_current_status
+          data:
+            value: "FAILED - out: {{ states('sensor.test_bedroom_out_of_setpoint') }}, needs: {{ states('sensor.test_bedroom_needs') }}, dir: {{ states('sensor.test_bedroom_target_direction') }}"
+        - service: input_number.set_value
+          target:
+            entity_id: input_number.test_failed_count
+          data:
+            value: "{{ states('input_number.test_failed_count') | int + 1 }}"
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_failed_list
+          data:
+            value: "{{ states('input_text.test_failed_list') }}21: Stop at setpoint; "
+
+    - delay:
+        milliseconds: 50
+
+    # -------------------------------------------------------------------------
+    # TEST 22: Continue heating below threshold (heat mode equivalent)
+    # -------------------------------------------------------------------------
+    - service: input_text.set_value
+      target:
+        entity_id: input_text.test_current_name
+      data:
+        value: "22: Continue heating below threshold"
+
+    # Set condenser to heat mode
+    - service: input_text.set_value
+      target:
+        entity_id: input_text.condenser_mode_request
+      data:
+        value: "heat"
+
+    # First, trigger the threshold by setting bedroom cold (-3°F)
+    - service: input_number.set_value
+      target:
+        entity_id: input_number.test_bedroom_temperature
+      data:
+        value: 62
+
+    - delay:
+        milliseconds: 50
+
+    # Now warm up to below threshold but still below setpoint
+    - service: input_number.set_value
+      target:
+        entity_id: input_number.test_bedroom_temperature
+      data:
+        value: 63.5
+
+    - delay:
+        milliseconds: 50
+
+    # Bedroom at 63.5°F (setpoint 65, deviation -1.5, below 2°F threshold)
+    # But should still need heating since we're below setpoint
+    - if:
+        - condition: template
+          value_template: >
+            {{ states('sensor.test_bedroom_out_of_setpoint') == 'True' and
+               states('sensor.test_bedroom_needs') == 'True' and
+               states('sensor.test_bedroom_target_direction') == 'heat' }}
+      then:
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_current_status
+          data:
+            value: "PASSED"
+        - service: input_number.set_value
+          target:
+            entity_id: input_number.test_passed_count
+          data:
+            value: "{{ states('input_number.test_passed_count') | int + 1 }}"
+      else:
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_current_status
+          data:
+            value: "FAILED - out: {{ states('sensor.test_bedroom_out_of_setpoint') }}, needs: {{ states('sensor.test_bedroom_needs') }}, dir: {{ states('sensor.test_bedroom_target_direction') }}"
+        - service: input_number.set_value
+          target:
+            entity_id: input_number.test_failed_count
+          data:
+            value: "{{ states('input_number.test_failed_count') | int + 1 }}"
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.test_failed_list
+          data:
+            value: "{{ states('input_text.test_failed_list') }}22: Continue heat below threshold; "
+
+    - delay:
+        milliseconds: 50
+
+    # -------------------------------------------------------------------------
     # Finalize test run
     # -------------------------------------------------------------------------
     - service: input_number.set_value
       target:
         entity_id: input_number.test_total_count
       data:
-        value: 19
+        value: 22
 
     - service: input_text.set_value
       target:
@@ -1342,7 +1553,7 @@
         entity_id: input_text.test_last_run_result
       data:
         value: >
-          {{ states('input_number.test_passed_count') | int }}/19 passed
+          {{ states('input_number.test_passed_count') | int }}/22 passed
           {% if states('input_number.test_failed_count') | int > 0 %}
           - FAILED: {{ states('input_text.test_failed_list') }}
           {% endif %}
@@ -1356,7 +1567,7 @@
       data:
         title: "HVAC Logic Tests Complete"
         message: >
-          Results: {{ states('input_number.test_passed_count') | int }}/19 tests passed
+          Results: {{ states('input_number.test_passed_count') | int }}/22 tests passed
 
           {% if states('input_number.test_failed_count') | int > 0 %}
           Failed tests: {{ states('input_text.test_failed_list') }}

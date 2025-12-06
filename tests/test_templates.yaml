@@ -194,6 +194,52 @@ sensor:
       {% endif %}
 
   # ---------------------------------------------------------------------------
+  # Room Needs Conditioning (mirrors head_units.yaml logic)
+  # ---------------------------------------------------------------------------
+  # Logic: Trigger at threshold, but continue until setpoint is reached.
+  # This prevents oscillation where cooling stops at 1.6°F deviation, room drifts
+  # back to 2.0°F, cooling restarts, etc.
+  # ---------------------------------------------------------------------------
+  - name: test_bedroom_needs
+    state: >
+      {% set dev = states('sensor.test_bedroom_deviation') | float %}
+      {% set mode = states('input_text.condenser_mode_request') %}
+      {% set threshold = states('input_number.deviation_threshold') | float(2) %}
+      {% set currently_out = states('sensor.test_bedroom_out_of_setpoint') == 'True' %}
+      {{ (mode == 'heat' and (dev <= -threshold or (currently_out and dev < 0))) or
+         (mode == 'cool' and (dev >= threshold or (currently_out and dev > 0))) }}
+
+  - name: test_office_needs
+    state: >
+      {% set dev = states('sensor.test_office_deviation') | float %}
+      {% set mode = states('input_text.condenser_mode_request') %}
+      {% set is_night = is_state('binary_sensor.hvac_night_mode_testable', 'on') %}
+      {% set threshold = states('input_number.night_non_priority_threshold') | float(6) if is_night else states('input_number.deviation_threshold') | float(2) %}
+      {% set currently_out = states('sensor.test_office_out_of_setpoint') == 'True' %}
+      {{ (mode == 'heat' and (dev <= -threshold or (currently_out and dev < 0))) or
+         (mode == 'cool' and (dev >= threshold or (currently_out and dev > 0))) }}
+
+  - name: test_living_room_needs
+    state: >
+      {% set dev = states('sensor.test_living_room_deviation') | float %}
+      {% set mode = states('input_text.condenser_mode_request') %}
+      {% set is_night = is_state('binary_sensor.hvac_night_mode_testable', 'on') %}
+      {% set threshold = states('input_number.night_non_priority_threshold') | float(6) if is_night else states('input_number.deviation_threshold') | float(2) %}
+      {% set currently_out = states('sensor.test_living_room_out_of_setpoint') == 'True' %}
+      {{ (mode == 'heat' and (dev <= -threshold or (currently_out and dev < 0))) or
+         (mode == 'cool' and (dev >= threshold or (currently_out and dev > 0))) }}
+
+  - name: test_first_floor_needs
+    state: >
+      {% set dev = states('sensor.test_first_floor_deviation') | float %}
+      {% set mode = states('input_text.condenser_mode_request') %}
+      {% set is_night = is_state('binary_sensor.hvac_night_mode_testable', 'on') %}
+      {% set threshold = states('input_number.night_non_priority_threshold') | float(6) if is_night else states('input_number.deviation_threshold') | float(2) %}
+      {% set currently_out = states('sensor.test_first_floor_out_of_setpoint') == 'True' %}
+      {{ (mode == 'heat' and (dev <= -threshold or (currently_out and dev < 0))) or
+         (mode == 'cool' and (dev >= threshold or (currently_out and dev > 0))) }}
+
+  # ---------------------------------------------------------------------------
   # Fan Speed Calculations (mirrors head_units.yaml logic)
   # ---------------------------------------------------------------------------
   # Fan speed is based on deviation magnitude:
@@ -203,9 +249,7 @@ sensor:
   - name: test_bedroom_fan_speed
     state: >
       {% set dev = states('sensor.test_bedroom_deviation') | float %}
-      {% set mode = states('input_text.condenser_mode_request') %}
-      {% set threshold = states('input_number.deviation_threshold') | float(2) %}
-      {% set needs = (mode == 'heat' and dev <= -threshold) or (mode == 'cool' and dev >= threshold) %}
+      {% set needs = is_state('sensor.test_bedroom_needs', 'True') %}
       {% if not needs %}low
       {% elif dev | abs > 3 %}high
       {% elif dev | abs > 1.5 %}medium
@@ -215,9 +259,7 @@ sensor:
   - name: test_office_fan_speed
     state: >
       {% set dev = states('sensor.test_office_deviation') | float %}
-      {% set mode = states('input_text.condenser_mode_request') %}
-      {% set threshold = states('input_number.deviation_threshold') | float(2) %}
-      {% set needs = (mode == 'heat' and dev <= -threshold) or (mode == 'cool' and dev >= threshold) %}
+      {% set needs = is_state('sensor.test_office_needs', 'True') %}
       {% if not needs %}low
       {% elif dev | abs > 3 %}high
       {% elif dev | abs > 1.5 %}medium
@@ -227,9 +269,7 @@ sensor:
   - name: test_living_room_fan_speed
     state: >
       {% set dev = states('sensor.test_living_room_deviation') | float %}
-      {% set mode = states('input_text.condenser_mode_request') %}
-      {% set threshold = states('input_number.deviation_threshold') | float(2) %}
-      {% set needs = (mode == 'heat' and dev <= -threshold) or (mode == 'cool' and dev >= threshold) %}
+      {% set needs = is_state('sensor.test_living_room_needs', 'True') %}
       {% if not needs %}low
       {% elif dev | abs > 3 %}high
       {% elif dev | abs > 1.5 %}medium
@@ -239,10 +279,7 @@ sensor:
   # First floor is 600 sq ft - always run high when being conditioned
   - name: test_first_floor_fan_speed
     state: >
-      {% set dev = states('sensor.test_first_floor_deviation') | float %}
-      {% set mode = states('input_text.condenser_mode_request') %}
-      {% set threshold = states('input_number.deviation_threshold') | float(2) %}
-      {% set needs = (mode == 'heat' and dev <= -threshold) or (mode == 'cool' and dev >= threshold) %}
+      {% set needs = is_state('sensor.test_first_floor_needs', 'True') %}
       {{ 'high' if needs else 'low' }}
 
   # ---------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 # HVAC Logic Test Framework
 
-Fast, automated testing for HVAC automation logic. Runs 19 tests in under 5 seconds.
+Fast, automated testing for HVAC automation logic. Runs 22 tests in under 5 seconds.
 
 ## What It Tests
 
@@ -20,6 +20,9 @@ Fast, automated testing for HVAC automation logic. Runs 19 tests in under 5 seco
 | 12 | First floor heating |
 | 13-18 | Fan speed calculations based on deviation |
 | 19 | First floor fan HIGH when conditioned (600 sq ft override) |
+| 20 | Continue cooling below threshold (oscillation prevention) |
+| 21 | Stop at setpoint (deviation = 0) |
+| 22 | Continue heating below threshold (heat mode equivalent) |
 
 ## Setup
 
