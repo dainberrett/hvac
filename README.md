@@ -25,6 +25,7 @@ tests/
 
 - Use dedicated Zigbee temperature sensors (Sonoff) as authoritative readings.
 - Dynamic sensor offset calibration: compensates for inaccurate Mitsubishi head unit sensors by comparing them to Sonoff readings and adjusting setpoint commands accordingly.
+- Trigger at threshold, continue until setpoint: conditioning starts when deviation exceeds the threshold (±2°F), but continues until the room actually reaches setpoint. This prevents oscillation where a room never reaches its target.
 - Minimize condenser mode switching (45-minute minimum runtime before mode switch).
 - Only the priority room is allowed to change condenser mode.
 - All non-targeted rooms use neutral temperature targets (60°F for heat, 80°F for cool).
