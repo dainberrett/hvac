@@ -380,13 +380,15 @@
         milliseconds: 50
 
     # -------------------------------------------------------------------------
-    # TEST 5: Night mode - Office at +4°F should NOT qualify (threshold is 5°F)
+    # TEST 5: Night mode - Office at +4°F should NOT qualify for priority (threshold is 5°F)
     # -------------------------------------------------------------------------
+    # Note: target_direction will be 'cool' (room wants to cool), but out_of_setpoint
+    # is False so room won't become priority.
     - service: input_text.set_value
       target:
         entity_id: input_text.test_current_name
       data:
-        value: "5: Night mode - Office +4F no qualify"
+        value: "5: Night mode - Office +4F no priority"
 
     # Set night time (11 PM)
     - service: input_datetime.set_datetime
@@ -408,8 +410,7 @@
     - if:
         - condition: template
           value_template: >
-            {{ states('sensor.test_office_target_direction') == 'none' and
-               states('sensor.test_office_out_of_setpoint') == 'False' }}
+            {{ states('sensor.test_office_out_of_setpoint') == 'False' }}
       then:
         - service: input_text.set_value
           target:
@@ -426,7 +427,7 @@
           target:
             entity_id: input_text.test_current_status
           data:
-            value: "FAILED - direction: {{ states('sensor.test_office_target_direction') }}, out: {{ states('sensor.test_office_out_of_setpoint') }}"
+            value: "FAILED - out: {{ states('sensor.test_office_out_of_setpoint') }}"
         - service: input_number.set_value
           target:
             entity_id: input_number.test_failed_count
@@ -552,13 +553,16 @@
         milliseconds: 50
 
     # -------------------------------------------------------------------------
-    # TEST 8: Deviation just below threshold - should NOT qualify
+    # TEST 8: Deviation just below threshold - should NOT qualify for priority
     # -------------------------------------------------------------------------
+    # Note: target_direction will be 'heat' (room wants to heat), but out_of_setpoint
+    # is False so room won't become priority. However, if condenser is in heat mode,
+    # the room WILL get active heating (via *_needs logic).
     - service: input_text.set_value
       target:
         entity_id: input_text.test_current_name
       data:
-        value: "8: Below threshold - no qualify"
+        value: "8: Below threshold - no priority"
 
     # Reset to day mode
     - service: input_datetime.set_datetime
@@ -586,8 +590,7 @@
     - if:
         - condition: template
           value_template: >
-            {{ states('sensor.test_bedroom_target_direction') == 'none' and
-               states('sensor.test_bedroom_out_of_setpoint') == 'False' }}
+            {{ states('sensor.test_bedroom_out_of_setpoint') == 'False' }}
       then:
         - service: input_text.set_value
           target:
@@ -604,7 +607,7 @@
           target:
             entity_id: input_text.test_current_status
           data:
-            value: "FAILED - dev: {{ states('sensor.test_bedroom_deviation') }}, dir: {{ states('sensor.test_bedroom_target_direction') }}"
+            value: "FAILED - out: {{ states('sensor.test_bedroom_out_of_setpoint') }}"
         - service: input_number.set_value
           target:
             entity_id: input_number.test_failed_count
@@ -1363,12 +1366,12 @@
         milliseconds: 50
 
     # Bedroom at 66.5°F (setpoint 65, deviation +1.5, below 2°F threshold)
-    # But out_of_setpoint should still be True and room should still need cooling
+    # Room should still need cooling because dev > 0 (still above setpoint)
+    # Note: out_of_setpoint will be False (threshold-based), but needs/direction should be True/cool
     - if:
         - condition: template
           value_template: >
-            {{ states('sensor.test_bedroom_out_of_setpoint') == 'True' and
-               states('sensor.test_bedroom_needs') == 'True' and
+            {{ states('sensor.test_bedroom_needs') == 'True' and
                states('sensor.test_bedroom_target_direction') == 'cool' }}
       then:
         - service: input_text.set_value
@@ -1386,7 +1389,7 @@
           target:
             entity_id: input_text.test_current_status
           data:
-            value: "FAILED - out: {{ states('sensor.test_bedroom_out_of_setpoint') }}, needs: {{ states('sensor.test_bedroom_needs') }}, dir: {{ states('sensor.test_bedroom_target_direction') }}"
+            value: "FAILED - needs: {{ states('sensor.test_bedroom_needs') }}, dir: {{ states('sensor.test_bedroom_target_direction') }}"
         - service: input_number.set_value
           target:
             entity_id: input_number.test_failed_count
@@ -1495,12 +1498,12 @@
         milliseconds: 50
 
     # Bedroom at 63.5°F (setpoint 65, deviation -1.5, below 2°F threshold)
-    # But should still need heating since we're below setpoint
+    # Room should still need heating because dev < 0 (still below setpoint)
+    # Note: out_of_setpoint will be False (threshold-based), but needs/direction should be True/heat
     - if:
         - condition: template
           value_template: >
-            {{ states('sensor.test_bedroom_out_of_setpoint') == 'True' and
-               states('sensor.test_bedroom_needs') == 'True' and
+            {{ states('sensor.test_bedroom_needs') == 'True' and
                states('sensor.test_bedroom_target_direction') == 'heat' }}
       then:
         - service: input_text.set_value
@@ -1518,7 +1521,7 @@
           target:
             entity_id: input_text.test_current_status
           data:
-            value: "FAILED - out: {{ states('sensor.test_bedroom_out_of_setpoint') }}, needs: {{ states('sensor.test_bedroom_needs') }}, dir: {{ states('sensor.test_bedroom_target_direction') }}"
+            value: "FAILED - needs: {{ states('sensor.test_bedroom_needs') }}, dir: {{ states('sensor.test_bedroom_target_direction') }}"
         - service: input_number.set_value
           target:
             entity_id: input_number.test_failed_count

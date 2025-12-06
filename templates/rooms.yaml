@@ -42,11 +42,11 @@ sensor:
       {% set dev = states('sensor.bedroom_temperature_deviation') | float %}
       {% set threshold = states('input_number.deviation_threshold') | float(2) %}
       {# Trigger at threshold, but continue until setpoint reached #}
-      {% set currently_out = states('sensor.bedroom_out_of_setpoint') == 'True' %}
+      {# Once above/below setpoint, continue in that direction until setpoint is crossed #}
       {% if dev >= threshold %}cool
       {% elif dev <= -threshold %}heat
-      {% elif currently_out and dev > 0 %}cool
-      {% elif currently_out and dev < 0 %}heat
+      {% elif dev > 0 %}cool
+      {% elif dev < 0 %}heat
       {% else %}none
       {% endif %}
 
@@ -72,11 +72,11 @@ sensor:
       {% set is_night = is_state('binary_sensor.hvac_night_mode', 'on') %}
       {% set threshold = states('input_number.night_non_priority_threshold') | float(6) if is_night else states('input_number.deviation_threshold') | float(2) %}
       {# Trigger at threshold, but continue until setpoint reached #}
-      {% set currently_out = states('sensor.office_out_of_setpoint') == 'True' %}
+      {# Once above/below setpoint, continue in that direction until setpoint is crossed #}
       {% if dev >= threshold %}cool
       {% elif dev <= -threshold %}heat
-      {% elif currently_out and dev > 0 %}cool
-      {% elif currently_out and dev < 0 %}heat
+      {% elif dev > 0 %}cool
+      {% elif dev < 0 %}heat
       {% else %}none
       {% endif %}
 
@@ -102,11 +102,11 @@ sensor:
       {% set is_night = is_state('binary_sensor.hvac_night_mode', 'on') %}
       {% set threshold = states('input_number.night_non_priority_threshold') | float(6) if is_night else states('input_number.deviation_threshold') | float(2) %}
       {# Trigger at threshold, but continue until setpoint reached #}
-      {% set currently_out = states('sensor.living_room_out_of_setpoint') == 'True' %}
+      {# Once above/below setpoint, continue in that direction until setpoint is crossed #}
       {% if dev >= threshold %}cool
       {% elif dev <= -threshold %}heat
-      {% elif currently_out and dev > 0 %}cool
-      {% elif currently_out and dev < 0 %}heat
+      {% elif dev > 0 %}cool
+      {% elif dev < 0 %}heat
       {% else %}none
       {% endif %}
 
@@ -132,11 +132,11 @@ sensor:
       {% set is_night = is_state('binary_sensor.hvac_night_mode', 'on') %}
       {% set threshold = states('input_number.night_non_priority_threshold') | float(6) if is_night else states('input_number.deviation_threshold') | float(2) %}
       {# Trigger at threshold, but continue until setpoint reached #}
-      {% set currently_out = states('sensor.first_floor_out_of_setpoint') == 'True' %}
+      {# Once above/below setpoint, continue in that direction until setpoint is crossed #}
       {% if dev >= threshold %}cool
       {% elif dev <= -threshold %}heat
-      {% elif currently_out and dev > 0 %}cool
-      {% elif currently_out and dev < 0 %}heat
+      {% elif dev > 0 %}cool
+      {% elif dev < 0 %}heat
       {% else %}none
       {% endif %}
 

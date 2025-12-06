@@ -143,11 +143,11 @@ sensor:
       {% set dev = states('sensor.test_bedroom_deviation') | float %}
       {% set threshold = states('input_number.deviation_threshold') | float(2) %}
       {# Trigger at threshold, but continue until setpoint reached #}
-      {% set currently_out = states('sensor.test_bedroom_out_of_setpoint') == 'True' %}
+      {# Once above/below setpoint, continue in that direction until setpoint is crossed #}
       {% if dev >= threshold %}cool
       {% elif dev <= -threshold %}heat
-      {% elif currently_out and dev > 0 %}cool
-      {% elif currently_out and dev < 0 %}heat
+      {% elif dev > 0 %}cool
+      {% elif dev < 0 %}heat
       {% else %}none
       {% endif %}
 
@@ -157,11 +157,11 @@ sensor:
       {% set is_night = is_state('binary_sensor.hvac_night_mode_testable', 'on') %}
       {% set threshold = states('input_number.night_non_priority_threshold') | float(6) if is_night else states('input_number.deviation_threshold') | float(2) %}
       {# Trigger at threshold, but continue until setpoint reached #}
-      {% set currently_out = states('sensor.test_office_out_of_setpoint') == 'True' %}
+      {# Once above/below setpoint, continue in that direction until setpoint is crossed #}
       {% if dev >= threshold %}cool
       {% elif dev <= -threshold %}heat
-      {% elif currently_out and dev > 0 %}cool
-      {% elif currently_out and dev < 0 %}heat
+      {% elif dev > 0 %}cool
+      {% elif dev < 0 %}heat
       {% else %}none
       {% endif %}
 
@@ -171,11 +171,11 @@ sensor:
       {% set is_night = is_state('binary_sensor.hvac_night_mode_testable', 'on') %}
       {% set threshold = states('input_number.night_non_priority_threshold') | float(6) if is_night else states('input_number.deviation_threshold') | float(2) %}
       {# Trigger at threshold, but continue until setpoint reached #}
-      {% set currently_out = states('sensor.test_living_room_out_of_setpoint') == 'True' %}
+      {# Once above/below setpoint, continue in that direction until setpoint is crossed #}
       {% if dev >= threshold %}cool
       {% elif dev <= -threshold %}heat
-      {% elif currently_out and dev > 0 %}cool
-      {% elif currently_out and dev < 0 %}heat
+      {% elif dev > 0 %}cool
+      {% elif dev < 0 %}heat
       {% else %}none
       {% endif %}
 
@@ -185,11 +185,11 @@ sensor:
       {% set is_night = is_state('binary_sensor.hvac_night_mode_testable', 'on') %}
       {% set threshold = states('input_number.night_non_priority_threshold') | float(6) if is_night else states('input_number.deviation_threshold') | float(2) %}
       {# Trigger at threshold, but continue until setpoint reached #}
-      {% set currently_out = states('sensor.test_first_floor_out_of_setpoint') == 'True' %}
+      {# Once above/below setpoint, continue in that direction until setpoint is crossed #}
       {% if dev >= threshold %}cool
       {% elif dev <= -threshold %}heat
-      {% elif currently_out and dev > 0 %}cool
-      {% elif currently_out and dev < 0 %}heat
+      {% elif dev > 0 %}cool
+      {% elif dev < 0 %}heat
       {% else %}none
       {% endif %}
 
@@ -199,45 +199,32 @@ sensor:
   # Logic: Trigger at threshold, but continue until setpoint is reached.
   # This prevents oscillation where cooling stops at 1.6°F deviation, room drifts
   # back to 2.0°F, cooling restarts, etc.
+  # Simplified: if dev matches condenser direction (heat=below setpoint, cool=above),
+  # then room needs conditioning.
   # ---------------------------------------------------------------------------
   - name: test_bedroom_needs
     state: >
       {% set dev = states('sensor.test_bedroom_deviation') | float %}
       {% set mode = states('input_text.condenser_mode_request') %}
-      {% set threshold = states('input_number.deviation_threshold') | float(2) %}
-      {% set currently_out = states('sensor.test_bedroom_out_of_setpoint') == 'True' %}
-      {{ (mode == 'heat' and (dev <= -threshold or (currently_out and dev < 0))) or
-         (mode == 'cool' and (dev >= threshold or (currently_out and dev > 0))) }}
+      {{ (mode == 'heat' and dev < 0) or (mode == 'cool' and dev > 0) }}
 
   - name: test_office_needs
     state: >
       {% set dev = states('sensor.test_office_deviation') | float %}
       {% set mode = states('input_text.condenser_mode_request') %}
-      {% set is_night = is_state('binary_sensor.hvac_night_mode_testable', 'on') %}
-      {% set threshold = states('input_number.night_non_priority_threshold') | float(6) if is_night else states('input_number.deviation_threshold') | float(2) %}
-      {% set currently_out = states('sensor.test_office_out_of_setpoint') == 'True' %}
-      {{ (mode == 'heat' and (dev <= -threshold or (currently_out and dev < 0))) or
-         (mode == 'cool' and (dev >= threshold or (currently_out and dev > 0))) }}
+      {{ (mode == 'heat' and dev < 0) or (mode == 'cool' and dev > 0) }}
 
   - name: test_living_room_needs
     state: >
       {% set dev = states('sensor.test_living_room_deviation') | float %}
       {% set mode = states('input_text.condenser_mode_request') %}
-      {% set is_night = is_state('binary_sensor.hvac_night_mode_testable', 'on') %}
-      {% set threshold = states('input_number.night_non_priority_threshold') | float(6) if is_night else states('input_number.deviation_threshold') | float(2) %}
-      {% set currently_out = states('sensor.test_living_room_out_of_setpoint') == 'True' %}
-      {{ (mode == 'heat' and (dev <= -threshold or (currently_out and dev < 0))) or
-         (mode == 'cool' and (dev >= threshold or (currently_out and dev > 0))) }}
+      {{ (mode == 'heat' and dev < 0) or (mode == 'cool' and dev > 0) }}
 
   - name: test_first_floor_needs
     state: >
       {% set dev = states('sensor.test_first_floor_deviation') | float %}
       {% set mode = states('input_text.condenser_mode_request') %}
-      {% set is_night = is_state('binary_sensor.hvac_night_mode_testable', 'on') %}
-      {% set threshold = states('input_number.night_non_priority_threshold') | float(6) if is_night else states('input_number.deviation_threshold') | float(2) %}
-      {% set currently_out = states('sensor.test_first_floor_out_of_setpoint') == 'True' %}
-      {{ (mode == 'heat' and (dev <= -threshold or (currently_out and dev < 0))) or
-         (mode == 'cool' and (dev >= threshold or (currently_out and dev > 0))) }}
+      {{ (mode == 'heat' and dev < 0) or (mode == 'cool' and dev > 0) }}
 
   # ---------------------------------------------------------------------------
   # Fan Speed Calculations (mirrors head_units.yaml logic)
