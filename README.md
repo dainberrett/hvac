@@ -1,6 +1,6 @@
 # HVAC Automation (Home Assistant)
 
-This repository contains the full automation logic for controlling the Mitsubishi mini-split system at my home using Home Assistant. The goal is to maintain each room within ±2°F of its setpoint while minimizing condenser mode switching.
+This repository contains the full automation logic for controlling the Mitsubishi mini-split system using Home Assistant. The goal is to maintain each room within ±2°F of its setpoint while minimizing condenser mode switching.
 
 ## Repository Structure
 
